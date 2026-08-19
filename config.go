@@ -13,13 +13,7 @@
 // This is Fase 6 item 5, and the first thing that actually *enforces*
 // AuthOverride (resource_config.go) and gives WithUser/UserFromContext
 // (auth.go) a reason to exist beyond carrying a value through the request.
-//
-// Package mw is Fase 7's split of goninja's auth/config plumbing (Config,
-// AuthPolicy, ResourceConfig, AuthOverride, Configurer, User,
-// WithUser/UserFromContext, MountWithConfig) out of the root goninja
-// package — it depends only on openapi (for MountWithConfig's Resource/API
-// params), not on the rest of the runtime.
-package mw
+package goninja
 
 import (
 	"net/http"

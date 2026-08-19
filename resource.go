@@ -11,8 +11,6 @@ import (
 	"net/http"
 
 	"gorm.io/gorm"
-
-	"github.com/caspel26/goninja/mw"
 )
 
 type txKey struct{}
@@ -41,7 +39,7 @@ type BaseResource struct {
 	openAPITags      []string
 	excludedFromDocs bool
 	self             any
-	config           mw.Config
+	config           Config
 }
 
 // SetDB injects the base database connection. Called by the generated
@@ -94,9 +92,9 @@ func (r *BaseResource) ExcludeFromDocs() {
 }
 
 // DocsExcluded reports whether ExcludeFromDocs was called — checked by
-// openapi.Mount/mw.MountWithConfig via a structural interface (Go's
-// unexported-method interface satisfaction is package-scoped, so this
-// must be exported to be visible from those other packages).
+// openapi.Mount (a different package than BaseResource) via a structural
+// interface. Go's unexported-method interface satisfaction is
+// package-scoped, so this must be exported to be visible there.
 func (r *BaseResource) DocsExcluded() bool {
 	return r.excludedFromDocs
 }
@@ -126,12 +124,12 @@ func (r *BaseResource) Self() any {
 // handlers. Called by MountWithConfig (config.go); a resource mounted via
 // plain Mount never gets this called, so Config() stays at its zero value —
 // no global auth, no global middleware.
-func (r *BaseResource) SetConfig(cfg mw.Config) {
+func (r *BaseResource) SetConfig(cfg Config) {
 	r.config = cfg
 }
 
 // Config returns the resource's configured Config, set via SetConfig.
-func (r *BaseResource) Config() mw.Config {
+func (r *BaseResource) Config() Config {
 	return r.config
 }
 
@@ -145,7 +143,7 @@ func (r *BaseResource) Config() mw.Config {
 // public by omission. Config.Middleware always wraps h, protected or not;
 // Config.DefaultAuth.Middleware wraps it only when protected. Generated
 // Register(mux) methods call this around every handler they mount.
-func (r *BaseResource) Protect(route string, rc mw.ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
+func (r *BaseResource) Protect(route string, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
 	wrapped := http.Handler(h)
 	if r.routeProtected(route, rc) {
 		for i := len(r.config.DefaultAuth.Middleware) - 1; i >= 0; i-- {
@@ -158,7 +156,7 @@ func (r *BaseResource) Protect(route string, rc mw.ResourceConfig, h http.Handle
 	return wrapped.ServeHTTP
 }
 
-func (r *BaseResource) routeProtected(route string, rc mw.ResourceConfig) bool {
+func (r *BaseResource) routeProtected(route string, rc ResourceConfig) bool {
 	protected := containsString(r.config.DefaultAuth.Protected, route) || containsString(rc.Auth.AlsoProtect, route)
 	if !protected {
 		return false

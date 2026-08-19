@@ -1,9 +1,7 @@
-package validate
+package goninja
 
 import (
 	"testing"
-
-	"github.com/caspel26/goninja"
 )
 
 type validateFixture struct {
@@ -26,7 +24,7 @@ func TestValidate_ReturnsValidationErrorKeyedByJSONName(t *testing.T) {
 		t.Fatal("Validate: err = nil, want a ValidationError")
 	}
 
-	ve, ok := err.(goninja.ValidationError)
+	ve, ok := err.(ValidationError)
 	if !ok {
 		t.Fatalf("Validate: err type = %T, want goninja.ValidationError", err)
 	}

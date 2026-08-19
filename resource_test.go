@@ -9,8 +9,6 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-
-	"github.com/caspel26/goninja/mw"
 )
 
 type resourceTestRow struct {
@@ -150,8 +148,8 @@ func TestBaseResource_Protect(t *testing.T) {
 	}
 
 	var r BaseResource
-	r.SetConfig(mw.Config{
-		DefaultAuth: mw.AuthPolicy{
+	r.SetConfig(Config{
+		DefaultAuth: AuthPolicy{
 			Protected:  []string{"create"},
 			Middleware: []func(http.Handler) http.Handler{authMW},
 		},
@@ -162,7 +160,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("protected route runs auth and global middleware", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("create", mw.ResourceConfig{}, handler)
+		h := r.Protect("create", ResourceConfig{}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 		if !authRan || !globalRan {
 			t.Errorf("authRan=%v globalRan=%v, want both true", authRan, globalRan)
@@ -171,7 +169,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("unprotected route only runs global middleware", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("list", mw.ResourceConfig{}, handler)
+		h := r.Protect("list", ResourceConfig{}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 		if authRan {
 			t.Error("authRan = true for an unprotected route, want false")
@@ -183,7 +181,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("AlsoProtect additively protects a route", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("retrieve", mw.ResourceConfig{Auth: mw.AuthOverride{AlsoProtect: []string{"retrieve"}}}, handler)
+		h := r.Protect("retrieve", ResourceConfig{Auth: AuthOverride{AlsoProtect: []string{"retrieve"}}}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 		if !authRan {
 			t.Error("authRan = false for a route added via AlsoProtect, want true")
@@ -192,7 +190,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("Public punches a hole in the default protection", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("create", mw.ResourceConfig{Auth: mw.AuthOverride{Public: []string{"create"}}}, handler)
+		h := r.Protect("create", ResourceConfig{Auth: AuthOverride{Public: []string{"create"}}}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 		if authRan {
 			t.Error("authRan = true for a route in Auth.Public, want false")
@@ -208,7 +206,7 @@ func TestBaseResource_Protect_ZeroConfigIsNoOp(t *testing.T) {
 	var ran bool
 	handler := func(w http.ResponseWriter, req *http.Request) { ran = true }
 
-	h := r.Protect("create", mw.ResourceConfig{}, handler)
+	h := r.Protect("create", ResourceConfig{}, handler)
 	h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 
 	if !ran {
