@@ -64,7 +64,7 @@ Il piano è cresciuto molto in fase di design. Per evitare che resti un piano, v
 └────────────────────┬─────────────────────────────┘
                      │ goninja generate
 ┌────────────────────▼─────────────────────────────┐
-│  internal/generated/ — GENERATO, non modificare    │
+│  internal/api/ — GENERATO, non modificare          │
 │   book_schema.go    → List/Retrieve/Create/Update  │
 │   book_resource.go  → logica CRUD (GORM)           │
 │   book_handlers.go  → livello HTTP + validazione   │
@@ -162,7 +162,7 @@ Un `AlsoProtect` che dimentica `create` non lo rende pubblico — resta protetto
 ### 5.4 Schemi generati
 
 ```go
-// internal/generated/book_schema.go — GENERATO
+// internal/api/book_schema.go — GENERATO
 type BookListSchema struct {
     ID        int64     `json:"id"`
     Title     string    `json:"title"`
@@ -195,7 +195,7 @@ Gli schemi di output sono **sempre** struct separate dal model GORM: impossibile
 ### 5.5 Resource generata
 
 ```go
-// internal/generated/book_resource.go — GENERATO
+// internal/api/book_resource.go — GENERATO
 type BookResource struct {
     goninja.BaseResource // fornisce r.DB(ctx) e r.ErrorMapper()
 }
@@ -236,7 +236,7 @@ func (r *BookResource) Retrieve(ctx context.Context, id int64) (*BookRetrieveSch
 ### 5.6 Livello HTTP generato — dove vive la validazione
 
 ```go
-// internal/generated/book_handlers.go — GENERATO
+// internal/api/book_handlers.go — GENERATO
 func (r *BookResource) createHandler() http.HandlerFunc {
     return func(w http.ResponseWriter, req *http.Request) {
         var input BookCreateSchema

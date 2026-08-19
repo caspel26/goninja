@@ -8,8 +8,8 @@
 // Run:
 //
 //	go run ../../cmd/goninja generate \
-//	  -models ./models -out ./internal/generated \
-//	  -package generated -models-import github.com/caspel26/goninja/examples/prototype/models
+//	  -models ./models -out ./internal/api \
+//	  -package api -models-import github.com/caspel26/goninja/examples/prototype/models
 //	go run .
 package main
 
@@ -17,13 +17,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/caspel26/goninja/examples/prototype/internal/generated"
+	"github.com/caspel26/goninja/examples/prototype/internal/api"
 )
 
 func main() {
 	mux := http.NewServeMux()
 
-	tasks := generated.NewTaskResource()
+	tasks := api.NewTaskResource()
 	tasks.Register(mux)
 
 	log.Println("prototype listening on :8080 (GET/POST /tasks, GET /tasks/{id})")

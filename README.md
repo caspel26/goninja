@@ -54,7 +54,7 @@ struct fields and generates typed schemas, an in-memory store, and
 Try it:
 
 ```console
-$ make generate-prototype   # writes examples/prototype/internal/generated
+$ make generate-prototype   # writes examples/prototype/internal/api
 $ make run-prototype        # serves GET/POST /tasks, GET /tasks/{id} on :8080
 ```
 
