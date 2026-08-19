@@ -31,33 +31,39 @@ type Resource interface {
 //	api.Mount(mux, taskResource, authorResource, bookResource)
 //	api.MountDocs(mux, "/docs", docsui.SwaggerUI())
 type API struct {
-	title, version string
-	paths          map[string]*openapi.PathItem
-	schemas        map[string]openapi.Schema
+	title, version  string
+	paths           map[string]*openapi.PathItem
+	schemas         map[string]openapi.Schema
+	securitySchemes map[string]openapi.SecurityScheme
 }
 
 // NewAPI creates a new API document with the given title/version (OpenAPI's
 // required top-level "info" fields).
 func NewAPI(title, version string) *API {
 	return &API{
-		title:   title,
-		version: version,
-		paths:   map[string]*openapi.PathItem{},
-		schemas: map[string]openapi.Schema{},
+		title:           title,
+		version:         version,
+		paths:           map[string]*openapi.PathItem{},
+		schemas:         map[string]openapi.Schema{},
+		securitySchemes: map[string]openapi.SecurityScheme{},
 	}
 }
 
-// Add merges p's OpenAPI fragment (its paths and the schemas they
-// reference) into a's document. Mount and MountWithConfig call this once
-// per resource automatically; call it directly only when wiring a resource
-// onto mux by hand instead of through them.
+// Add merges p's OpenAPI fragment (its paths, the schemas they reference,
+// and the security schemes any protected path's Security refers to) into
+// a's document. Mount and MountWithConfig call this once per resource
+// automatically; call it directly only when wiring a resource onto mux by
+// hand instead of through them.
 func (a *API) Add(p openapi.OpenAPIProvider) {
-	paths, schemas := p.OpenAPI()
+	paths, schemas, securitySchemes := p.OpenAPI()
 	for path, item := range paths {
 		a.paths[path] = item
 	}
 	for name, schema := range schemas {
 		a.schemas[name] = schema
+	}
+	for name, scheme := range securitySchemes {
+		a.securitySchemes[name] = scheme
 	}
 }
 
@@ -68,7 +74,7 @@ func (a *API) Spec() openapi.Spec {
 		OpenAPI:    "3.0.3",
 		Info:       openapi.Info{Title: a.title, Version: a.version},
 		Paths:      a.paths,
-		Components: openapi.Components{Schemas: a.schemas},
+		Components: openapi.Components{Schemas: a.schemas, SecuritySchemes: a.securitySchemes},
 	}
 }
 

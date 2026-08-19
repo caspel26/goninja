@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/caspel26/goninja/openapi"
 )
 
 func TestAPI_MountRegistersAndDocuments(t *testing.T) {
@@ -59,7 +61,7 @@ func TestAPI_MountWithConfig_SetsConfigAndRegisters(t *testing.T) {
 	mux := http.NewServeMux()
 	api := NewAPI("Test API", "1.0.0")
 	r := &fakeResource{path: "/fakes"}
-	cfg := Config{DefaultAuth: AuthPolicy{Protected: []string{"create"}}}
+	cfg := Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}}
 
 	api.MountWithConfig(mux, cfg, r)
 
@@ -67,7 +69,7 @@ func TestAPI_MountWithConfig_SetsConfigAndRegisters(t *testing.T) {
 		t.Error("MountWithConfig did not call Register on the resource")
 	}
 	got := r.Config()
-	if len(got.DefaultAuth.Protected) != 1 || got.DefaultAuth.Protected[0] != "create" {
+	if len(got.DefaultAuth.Routes) != 1 || got.DefaultAuth.Routes[0] != RouteCreate {
 		t.Errorf("resource Config() = %+v, want the cfg passed to MountWithConfig", got)
 	}
 	if _, ok := api.Spec().Paths["/fakes"]; !ok {
@@ -79,7 +81,7 @@ func TestAPI_MountWithConfig_ExcludedFromDocs(t *testing.T) {
 	mux := http.NewServeMux()
 	api := NewAPI("Test API", "1.0.0")
 	r := &fakeResource{path: "/fakes", excluded: true}
-	cfg := Config{DefaultAuth: AuthPolicy{Protected: []string{"create"}}}
+	cfg := Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}}
 
 	api.MountWithConfig(mux, cfg, r)
 
@@ -88,6 +90,23 @@ func TestAPI_MountWithConfig_ExcludedFromDocs(t *testing.T) {
 	}
 	if _, ok := api.Spec().Paths["/fakes"]; ok {
 		t.Error("MountWithConfig added a DocsExcluded resource's fragment, want it skipped")
+	}
+}
+
+func TestAPI_Add_MergesSecuritySchemes(t *testing.T) {
+	api := NewAPI("Test API", "1.0.0")
+	r := &fakeResource{
+		path: "/fakes",
+		securitySchemes: map[string]openapi.SecurityScheme{
+			"bearer": {Type: "http", Scheme: "bearer"},
+		},
+	}
+
+	api.Add(r)
+
+	got := api.Spec().Components.SecuritySchemes
+	if _, ok := got["bearer"]; !ok {
+		t.Errorf("SecuritySchemes = %+v, want a merged \"bearer\" entry", got)
 	}
 }
 

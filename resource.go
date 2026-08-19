@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/caspel26/goninja/openapi"
 	"gorm.io/gorm"
 )
 
@@ -150,21 +151,20 @@ func (r *BaseResource) Actions() []Action {
 }
 
 // Protect wraps h according to this resource's global Config
-// (DefaultAuth/Middleware, config.go) and rc's per-resource AuthOverride
-// (resource_config.go): route ("list", "retrieve", "create", "update", or
-// "delete") is protected when it's named in Config.DefaultAuth.Protected or
-// rc.Auth.AlsoProtect, unless it's also explicitly named in rc.Auth.Public —
-// additive-only, so a route missing from AlsoProtect is left exactly as the
-// global default treats it, and one missing from Public is never made
-// public by omission. Config.Middleware always wraps h, protected or not;
-// Config.DefaultAuth.Middleware wraps it only when protected. Generated
+// (DefaultAuth/Middleware, config.go) and rc's per-resource RouteAuth
+// override (resource_config.go, plan section 5.15): route is protected
+// when a rc.Auth[route] override says Public=false and (its own Auth or,
+// if unset, Config.DefaultAuth.Auth) applies, or — absent an override —
+// when route is named in Config.DefaultAuth.Routes. A protected route is
+// wrapped so any one of its resolved Authenticators recognizing the
+// request lets it through (tried in order), stores the resulting User via
+// WithUser, and otherwise responds 401 once every Authenticator has
+// declined. Config.Middleware always wraps h, protected or not. Generated
 // Register(mux) methods call this around every handler they mount.
-func (r *BaseResource) Protect(route string, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
+func (r *BaseResource) Protect(route Route, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
 	wrapped := http.Handler(h)
-	if r.routeProtected(route, rc) {
-		for i := len(r.config.DefaultAuth.Middleware) - 1; i >= 0; i-- {
-			wrapped = r.config.DefaultAuth.Middleware[i](wrapped)
-		}
+	if auths, protected := r.authenticatorsFor(route, rc); protected {
+		wrapped = requireAuth(auths, wrapped)
 	}
 	for i := len(r.config.Middleware) - 1; i >= 0; i-- {
 		wrapped = r.config.Middleware[i](wrapped)
@@ -172,21 +172,55 @@ func (r *BaseResource) Protect(route string, rc ResourceConfig, h http.HandlerFu
 	return wrapped.ServeHTTP
 }
 
-func (r *BaseResource) routeProtected(route string, rc ResourceConfig) bool {
-	protected := containsString(r.config.DefaultAuth.Protected, route) || containsString(rc.Auth.AlsoProtect, route)
-	if !protected {
-		return false
+// SecurityFor mirrors Protect's own protected/override resolution so
+// generated OpenAPI() methods document exactly what Protect enforces,
+// without re-implementing that logic: reqs is an OpenAPI Security
+// requirement list (nil if route isn't protected, one alternative entry
+// per resolved Authenticator), and schemes collects each Authenticator's
+// SecurityScheme keyed by Name for Components.SecuritySchemes.
+func (r *BaseResource) SecurityFor(route Route, rc ResourceConfig) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme) {
+	auths, protected := r.authenticatorsFor(route, rc)
+	if !protected || len(auths) == 0 {
+		return nil, nil
 	}
-	return !containsString(rc.Auth.Public, route)
+	schemes = make(map[string]openapi.SecurityScheme, len(auths))
+	for _, a := range auths {
+		reqs = append(reqs, map[string][]string{a.Name(): {}})
+		schemes[a.Name()] = a.SecurityScheme()
+	}
+	return reqs, schemes
 }
 
-func containsString(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
+func (r *BaseResource) authenticatorsFor(route Route, rc ResourceConfig) (auths []Authenticator, protected bool) {
+	if ra, ok := rc.Auth[route]; ok {
+		if ra.Public {
+			return nil, false
 		}
+		if len(ra.Auth) > 0 {
+			return ra.Auth, true
+		}
+		return r.config.DefaultAuth.Auth, true
 	}
-	return false
+	if containsRoute(r.config.DefaultAuth.Routes, route) {
+		return r.config.DefaultAuth.Auth, true
+	}
+	return nil, false
+}
+
+// requireAuth wraps next so the request reaches it only once one of auths
+// recognizes it — tried in order, first match wins, its User attached to
+// the request context via WithUser. Responds 401 if every Authenticator
+// declines.
+func requireAuth(auths []Authenticator, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		for _, a := range auths {
+			if user, ok := a.Authenticate(req); ok {
+				next.ServeHTTP(w, req.WithContext(WithUser(req.Context(), user)))
+				return
+			}
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
 }
 
 // DB returns the connection to use for this context: the enclosing

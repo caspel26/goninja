@@ -19,8 +19,8 @@ func (r *fakeResource) Register(mux *http.ServeMux) {
 	})
 }
 
-func (r *fakeResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
-	return nil, nil
+func (r *fakeResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema, map[string]openapi.SecurityScheme) {
+	return nil, nil, nil
 }
 
 func TestNewServer_MountsAndServesResources(t *testing.T) {

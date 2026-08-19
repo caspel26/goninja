@@ -2,39 +2,46 @@ package goninja
 
 // ResourceConfig lets a resource wrapper customize how the generated
 // Register(mux) and OpenAPI() methods mount and document a resource's
-// routes, and how the (not yet built, Fase 6 item 5) global default auth
-// applies to them — plan section 5.3. A resource picks this up by
-// implementing Configurer on the value passed to SetSelf, the same
-// dispatch hooks.go and method overrides use (plan section 5.10): a
-// resource used directly, with no wrapper, gets every generated default.
+// routes, and how the global default auth (Config.DefaultAuth) applies to
+// them — plan section 5.3/5.15. A resource picks this up by implementing
+// Configurer on the value passed to SetSelf, the same dispatch hooks.go and
+// method overrides use (plan section 5.10): a resource used directly, with
+// no wrapper, gets every generated default.
 type ResourceConfig struct {
 	// Path overrides the resource's base route path (e.g. "/v1/books"),
 	// with "/{id}" appended for the retrieve/update/delete routes. Empty
 	// keeps the generated default (e.g. "/books").
 	Path string
 
-	// Routes restricts which of "list", "retrieve", "create", "update",
-	// "delete" get mounted/documented. Empty means all of them — Routes is
-	// an opt-in restriction, not an enable list you must spell out in full
-	// just to keep every route.
-	Routes []string
+	// Routes restricts which of RouteList/RouteRetrieve/RouteCreate/
+	// RouteUpdate/RouteDelete get mounted/documented. Empty means all of
+	// them — Routes is an opt-in restriction, not an enable list you must
+	// spell out in full just to keep every route.
+	Routes []Route
 
-	// Auth is an additive-only override of the global default auth. See
-	// AuthOverride.
-	Auth AuthOverride
+	// Auth overrides Config.DefaultAuth per route: a Route present as a key
+	// here replaces how that route is authenticated; a Route absent from
+	// this map is left exactly as Config.DefaultAuth treats it. See
+	// RouteAuth.
+	Auth map[Route]RouteAuth
 }
 
-// AuthOverride is additive-only by design (plan section 5.3): per-resource
-// config can only ever add protection relative to the future global
-// default auth (Config.DefaultAuth, Fase 6 item 5, not yet built), never
-// silently remove it. AlsoProtect names routes to protect beyond the
-// default; Public names routes to make public, but only takes effect for a
-// route explicitly listed there — a route missing from AlsoProtect is left
-// exactly as the global default treats it, and a route missing from Public
-// is never made public by omission.
-type AuthOverride struct {
-	AlsoProtect []string
-	Public      []string
+// RouteAuth is one route's override entry in ResourceConfig.Auth (plan
+// section 5.15). Its presence in the map is what makes it an override —
+// there is no separate "enabled" flag to forget: Public=true and
+// unset/empty Auth both mean "public", so a resource wrapper composing this
+// map has exactly one way to express each outcome, not two that could
+// disagree.
+type RouteAuth struct {
+	// Auth, if non-empty, replaces Config.DefaultAuth.Auth for this route —
+	// tried in order until one Authenticator returns ok=true, same as the
+	// global policy. Ignored when Public is true.
+	Auth []Authenticator
+
+	// Public, when true, makes this route require no auth at all,
+	// regardless of what Config.DefaultAuth says — the explicit opt-out a
+	// resource needs to punch a hole in a global default (plan section 5.3).
+	Public bool
 }
 
 // Configurer is the optional interface a resource wrapper implements to
@@ -45,18 +52,13 @@ type Configurer interface {
 	Config() ResourceConfig
 }
 
-// RouteEnabled reports whether route (one of "list", "retrieve", "create",
-// "update", "delete") should be mounted/documented per cfg.Routes.
-func (cfg ResourceConfig) RouteEnabled(route string) bool {
+// RouteEnabled reports whether route should be mounted/documented per
+// cfg.Routes.
+func (cfg ResourceConfig) RouteEnabled(route Route) bool {
 	if len(cfg.Routes) == 0 {
 		return true
 	}
-	for _, r := range cfg.Routes {
-		if r == route {
-			return true
-		}
-	}
-	return false
+	return containsRoute(cfg.Routes, route)
 }
 
 // PathOr returns cfg.Path if set, else def — the generated default path.

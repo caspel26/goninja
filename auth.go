@@ -1,23 +1,52 @@
-// WithUser/UserFromContext are the minimal contract between an auth
-// middleware (yours) and the framework (plan section 5.8, Fase 6 item 4):
-// middleware authenticates the request and stores the resulting User on the
-// context; a resource — most often an overridden method or a hook, wired in
-// via BaseResource.SetSelf like everything else in Phase 6 — reads it back
-// out. goninja doesn't impose a user struct beyond the one method it needs.
-//
-// Nothing here enforces authentication yet — that's Config.DefaultAuth/
-// Config.Middleware (plan section 6 item 5), still to come. This file only
-// carries the user through the request; a resource that wants to require
-// one checks UserFromContext itself in the meantime.
+// WithUser/UserFromContext are the minimal contract between auth
+// enforcement and the rest of the framework (plan section 5.8/5.15): an
+// Authenticator authenticates the request and returns the resulting User;
+// goninja stores it on the context via WithUser before the request reaches
+// a resource's handlers, and a resource — most often an overridden method
+// or a hook, wired in via BaseResource.SetSelf like everything else in
+// Phase 6 — reads it back out via UserFromContext. goninja doesn't impose a
+// user struct beyond the one method it needs.
 package goninja
 
-import "context"
+import (
+	"context"
+	"net/http"
+
+	"github.com/caspel26/goninja/openapi"
+)
 
 // User is the minimal contract goninja needs from an authenticated caller.
-// Implement it on whatever type your own auth middleware already produces —
+// Implement it on whatever type your own Authenticator already produces —
 // goninja never constructs one itself.
 type User interface {
 	ID() string
+}
+
+// Authenticator inspects a request and either identifies the caller or
+// declines (plan section 5.15) — mirroring Django Ninja's auth objects
+// (HttpBearer, ApiKeyHeader, ...) rather than a plain middleware func: the
+// object that enforces auth is also the only source of truth for how it's
+// documented, so runtime behavior and the generated OpenAPI document can't
+// drift apart the way two separately-wired mechanisms could.
+type Authenticator interface {
+	// Authenticate inspects r and returns the authenticated User, or
+	// ok=false if this Authenticator doesn't recognize the request (e.g. no
+	// bearer token present) or the credential is invalid. It never writes
+	// to a response itself — goninja rejects the request with 401 only
+	// after every configured Authenticator for the route has declined (see
+	// BaseResource.Protect, resource.go), which is what lets a route accept
+	// more than one scheme (e.g. bearer-or-api-key), tried in order.
+	Authenticate(r *http.Request) (User, bool)
+
+	// Name identifies this Authenticator in the generated OpenAPI
+	// document — the key under components.securitySchemes and in an
+	// Operation's Security requirement. Two distinct Authenticators sharing
+	// a Name are assumed to describe the same scheme.
+	Name() string
+
+	// SecurityScheme describes this Authenticator for the generated
+	// OpenAPI document (see BaseResource.SecurityFor, resource.go).
+	SecurityScheme() openapi.SecurityScheme
 }
 
 type userKey struct{}

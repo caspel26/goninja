@@ -6,12 +6,12 @@ func TestResourceConfig_RouteEnabled(t *testing.T) {
 	tests := []struct {
 		name  string
 		cfg   ResourceConfig
-		route string
+		route Route
 		want  bool
 	}{
-		{"empty Routes enables everything", ResourceConfig{}, "delete", true},
-		{"listed route enabled", ResourceConfig{Routes: []string{"list", "retrieve"}}, "list", true},
-		{"unlisted route disabled", ResourceConfig{Routes: []string{"list", "retrieve"}}, "create", false},
+		{"empty Routes enables everything", ResourceConfig{}, RouteDelete, true},
+		{"listed route enabled", ResourceConfig{Routes: []Route{RouteList, RouteRetrieve}}, RouteList, true},
+		{"unlisted route disabled", ResourceConfig{Routes: []Route{RouteList, RouteRetrieve}}, RouteCreate, false},
 	}
 
 	for _, tt := range tests {

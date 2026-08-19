@@ -185,7 +185,7 @@ func TestGenerate_ActionsDispatch(t *testing.T) {
 
 	for _, want := range []string{
 		"for _, a := range r.Actions() {",
-		"r.Protect(a.Name, cfg, a.Handler)",
+		"r.Protect(goninja.Route(a.Name), cfg, a.Handler)",
 		"a.Summary",
 	} {
 		if !strings.Contains(got, want) {

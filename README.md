@@ -243,17 +243,19 @@ resource's mount path or drop routes it shouldn't expose — both
 func (r *authorWithAudit) Config() goninja.ResourceConfig {
     return goninja.ResourceConfig{
         Path:   "/v1/authors", // default would be "/authors"
-        Routes: []string{"list", "retrieve"}, // no create/update/delete
+        Routes: []goninja.Route{goninja.RouteList, goninja.RouteRetrieve}, // no create/update/delete
     }
 }
 ```
 
 `Routes` is opt-in restriction, not a list you must spell out in full —
 leave it unset (or nil) to keep every route. `ResourceConfig` also carries
-an additive-only `Auth` override (`AuthOverride.AlsoProtect`/`Public`) for
-the global default auth below — `create`/`update`/`delete` protected but a
-resource wants `retrieve` protected too, or one route punched public
-against the default.
+a per-route `Auth map[goninja.Route]goninja.RouteAuth` override for the
+global default auth below — key a route in the map to override it: give it
+its own `Auth []goninja.Authenticator` to require different authenticators
+than the default, leave `Auth` unset to require the default authenticators
+on a route the default policy doesn't otherwise protect, or set
+`Public: true` to punch a hole through the default for that one route.
 
 ### Adding custom routes beyond CRUD
 
@@ -264,8 +266,9 @@ collection-level (`<base>/<UrlPath>`), an HTTP `Method`, and a `Handler` —
 instead of writing route-mounting code by hand. `Register(mux)` mounts
 every action declared via `SetActions` automatically, after the generated
 CRUD routes, wrapped through the same `Protect` auth/middleware chain those
-get (`Action.Name` is the route name `ResourceConfig.Auth`'s
-`AlsoProtect`/`Public` can target, same as `"list"`/`"create"`/etc.); a
+get (`Action.Name`, converted to `goninja.Route(a.Name)`, is what
+`ResourceConfig.Auth` keys against, same as `RouteList`/`RouteCreate`/etc.);
+a
 `Summary` on the `Action` gets it documented in `OpenAPI()` too, no extra
 step. Unlike hooks and method overrides, this needs no wrapper type or
 `SetSelf` — an `Action` already carries its own `http.HandlerFunc`, so
@@ -353,22 +356,29 @@ into `package main` rather than a separate `handlers` package) lives in
 policy and generic middleware (logging, CORS, ...) applied to every
 resource passed to it.
 
+Auth is an object, not a route-name string list — a `goninja.Authenticator`
+you attach at the point of registration, mirroring how Django Ninja's
+`AuthBase` works rather than DRF's `permission_classes`:
+
 ```go
-authMW := func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-        user, ok := authenticate(req) // yours
-        if !ok {
-            http.Error(w, "unauthorized", http.StatusUnauthorized)
-            return
-        }
-        next.ServeHTTP(w, req.WithContext(goninja.WithUser(req.Context(), user)))
-    })
+type BearerAuth struct{}
+
+func (BearerAuth) Name() string { return "bearer" }
+
+func (BearerAuth) SecurityScheme() openapi.SecurityScheme {
+    return openapi.SecurityScheme{Type: "http", Scheme: "bearer"}
+}
+
+func (BearerAuth) Authenticate(r *http.Request) (goninja.User, bool) {
+    token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+    user, ok := lookupUser(token) // yours
+    return user, ok
 }
 
 cfg := goninja.Config{
     DefaultAuth: goninja.AuthPolicy{
-        Protected:  []string{"create", "update", "delete"},
-        Middleware: []func(http.Handler) http.Handler{authMW},
+        Routes: []goninja.Route{goninja.RouteCreate, goninja.RouteUpdate, goninja.RouteDelete},
+        Auth:   []goninja.Authenticator{BearerAuth{}},
     },
     Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 }
@@ -379,19 +389,57 @@ app.MountWithConfig(mux, cfg,
 )
 ```
 
-`DefaultAuth.Protected` names routes ("list", "retrieve", "create",
-"update", "delete") that require auth by default; `DefaultAuth.Middleware`
-is what enforces it, wrapping only the routes that end up protected once a
-resource's own `ResourceConfig.Auth` override is folded in. `Middleware`
-wraps every route on every resource unconditionally, public or not. A
-resource that reads the authenticated user — typically inside
-`DefaultAuth.Middleware` itself, or from an overridden method/hook —
-retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
-being just `ID() string`; goninja never constructs one itself.
+`DefaultAuth.Routes` names the routes that require auth by default;
+`DefaultAuth.Auth` is the list of `Authenticator`s tried, in order, against
+a protected request — the first one whose `Authenticate` returns `ok` wins
+and its `User` is attached to the context, and the request is rejected
+with 401 only once every `Authenticator` has declined. `Authenticate`
+itself never writes to the response, which is what makes trying several
+`Authenticator`s in sequence safe. `Config.Middleware` wraps every route on
+every resource unconditionally, public or not — for logging/CORS-style
+concerns that aren't about identity. A resource that reads the
+authenticated user retrieves it with `goninja.UserFromContext(ctx)`, the
+`User` interface being just `ID() string`; goninja never constructs one
+itself.
 
-Plain `api.Mount` still works exactly as before — a resource it mounts gets
-a zero `Config`, so nothing is protected and no middleware runs, unless you
-switch that resource to `api.MountWithConfig`.
+Because an `Authenticator` self-describes its own `SecurityScheme()`, the
+same object that enforces auth at runtime is also the sole source of truth
+for how it's documented — every protected route's generated `OpenAPI()`
+carries a matching `Security` requirement, so enforcement and
+documentation can never drift apart.
+
+Override the default per resource or per route with
+`ResourceConfig.Auth map[goninja.Route]goninja.RouteAuth` — see "Custom
+path and restricted routes" above. Plain `api.Mount` still works exactly
+as before — a resource it mounts gets a zero `Config`, so nothing is
+protected and no middleware runs, unless you switch that resource to
+`api.MountWithConfig`.
+
+#### Built-in Authenticators
+
+Writing `Name()`/`SecurityScheme()`/`Authenticate` by hand for a common
+scheme is boilerplate goninja ships ready-made — each takes only the
+`Verify` closure that turns a raw credential into a `User`:
+
+```go
+goninja.HTTPBearer{Verify: func(token string) (goninja.User, bool) { ... }}
+goninja.HTTPBasic{Verify: func(username, password string) (goninja.User, bool) { ... }}
+goninja.APIKeyHeader{Verify: func(key string) (goninja.User, bool) { ... }}   // default header: X-API-Key
+goninja.CookieKey{Verify: func(value string) (goninja.User, bool) { ... }}    // default cookie: session
+```
+
+Each has an optional field to change what it reads (`HeaderName`,
+`CookieName`) and an `AuthName` to rename its OpenAPI security scheme.
+Anything more unusual — a custom header, combining multiple credentials, a
+scheme not listed here — still just implements `Authenticator` directly, as
+in the `BearerAuth` example above.
+
+A runnable proof of this end to end lives in `examples/prototype`:
+`auth.go`'s `newAPIKeyAuth` builds a `goninja.APIKeyHeader` and `main.go`
+wires it in — set `PROTOTYPE_API_KEY` before starting the server and
+create/update/delete on every resource require an `X-API-Key` header
+matching it; leave it unset and the prototype stays fully public, for
+frictionless local exploration.
 
 ### Relations: nested or by ID
 
