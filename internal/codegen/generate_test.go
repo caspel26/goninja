@@ -9,16 +9,17 @@ import (
 
 // TestGenerate_TwoModels is the Phase 1 exit criterion from
 // goninja-implementation-plan.md: the engine must generalize beyond a
-// single hand-tuned model. It also guards against shared-helper
-// duplication (writeJSON/idFromPath) when multiple models land in the
-// same generated package.
+// single hand-tuned model. Shared handler helpers (JSON responses, error
+// mapping, validation) live in the goninja package rather than being
+// generated per model, so there's no shared-file duplication risk to guard
+// here beyond each model's own file existing.
 func TestGenerate_TwoModels(t *testing.T) {
 	models := []Model{
 		{
 			Name: "Task",
 			Fields: []Field{
 				{Name: "ID", GoType: "int64", JSONName: "id", Tags: []string{"list", "retrieve"}},
-				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "create"}},
+				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "create"}, ValidateTag: "required"},
 			},
 		},
 		{
@@ -36,26 +37,18 @@ func TestGenerate_TwoModels(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	for _, name := range []string{"task_generated.go", "author_generated.go", "runtime_generated.go"} {
+	for _, name := range []string{"task_generated.go", "author_generated.go"} {
 		if _, err := os.Stat(filepath.Join(outDir, name)); err != nil {
 			t.Errorf("expected %s to exist: %v", name, err)
 		}
 	}
 
-	// writeJSON/idFromPath must be declared exactly once (in the runtime
-	// file), never re-declared per model.
-	for _, helper := range []string{"func writeJSON", "func idFromPath"} {
-		count := 0
-		for _, name := range []string{"task_generated.go", "author_generated.go", "runtime_generated.go"} {
-			b, err := os.ReadFile(filepath.Join(outDir, name))
-			if err != nil {
-				t.Fatal(err)
-			}
-			count += strings.Count(string(b), helper)
-		}
-		if count != 1 {
-			t.Errorf("expected %q declared exactly once across generated files, found %d", helper, count)
-		}
+	b, err := os.ReadFile(filepath.Join(outDir, "task_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `validate:"required"`) {
+		t.Errorf("expected Task's validate tag to appear in generated schema, got:\n%s", b)
 	}
 }
 

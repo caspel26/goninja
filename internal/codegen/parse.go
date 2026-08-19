@@ -78,12 +78,15 @@ func parseStruct(name string, st *ast.StructType) (Model, bool, error) {
 			jsonName = jsonName[:idx]
 		}
 
+		validateTag := tag.Get("validate")
+
 		for _, fname := range f.Names {
 			model.Fields = append(model.Fields, Field{
-				Name:     fname.Name,
-				GoType:   goType,
-				JSONName: jsonName,
-				Tags:     splitTag(goninjaTag),
+				Name:        fname.Name,
+				GoType:      goType,
+				JSONName:    jsonName,
+				Tags:        splitTag(goninjaTag),
+				ValidateTag: validateTag,
 			})
 		}
 	}

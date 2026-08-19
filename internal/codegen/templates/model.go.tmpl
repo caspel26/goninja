@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -35,16 +36,19 @@ type {{.Model.Name}}RetrieveSchema struct {
 }
 
 // {{.Model.Name}}CreateSchema is the shape accepted by POST /{{.Model.NameLower}}s.
+// `validate` tags (go-playground/validator syntax) are copied verbatim from
+// the model field's own `validate` tag, and enforced by goninja.Validate
+// before Create runs.
 type {{.Model.Name}}CreateSchema struct {
 {{- range .Model.CreateFields}}
-	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"`
+	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
 // {{.Model.Name}}UpdateSchema is the shape accepted by PUT /{{.Model.NameLower}}s/{id}.
 type {{.Model.Name}}UpdateSchema struct {
 {{- range .Model.UpdateFields}}
-	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"`
+	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
@@ -70,7 +74,7 @@ func to{{.Model.Name}}RetrieveSchema(m *{{$mt}}) {{.Model.Name}}RetrieveSchema {
 
 // {{.Model.Name}}Resource is the generated GORM-backed CRUD resource for
 // {{.Model.Name}}. Embeds goninja.BaseResource for a transaction-aware
-// DB(ctx).
+// DB(ctx) and a configurable ErrorMapper.
 type {{.Model.Name}}Resource struct {
 	goninja.BaseResource
 }
@@ -118,6 +122,9 @@ func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id int64) (*{{.M
 }
 
 func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}CreateSchema) (*{{.Model.Name}}RetrieveSchema, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
 	m := {{$mt}}{
 {{- range .Model.CreateFields}}
 		{{.Name}}: in.{{.Name}},
@@ -130,6 +137,9 @@ func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}
 }
 
 func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id int64, in {{.Model.Name}}UpdateSchema) (*{{.Model.Name}}RetrieveSchema, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
 	var m {{$mt}}
 	if err := r.DB(ctx).First(&m, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -160,67 +170,67 @@ func (r *{{.Model.Name}}Resource) Delete(ctx context.Context, id int64) error {
 func (r *{{.Model.Name}}Resource) listHandler(w http.ResponseWriter, req *http.Request) {
 	items, err := r.List(req.Context())
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	goninja.RespondJSON(w, http.StatusOK, items)
 }
 
 func (r *{{.Model.Name}}Resource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
 func (r *{{.Model.Name}}Resource) createHandler(w http.ResponseWriter, req *http.Request) {
 	var in {{.Model.Name}}CreateSchema
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	out, err := r.Create(req.Context(), in)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, out)
+	goninja.RespondJSON(w, http.StatusCreated, out)
 }
 
 func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	var in {{.Model.Name}}UpdateSchema
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	out, err := r.Update(req.Context(), id, in)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
 func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	if err := r.Delete(req.Context(), id); err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
