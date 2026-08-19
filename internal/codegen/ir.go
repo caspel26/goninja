@@ -8,6 +8,20 @@
 // investment in the real engine.
 package codegen
 
+import "strings"
+
+// scalarGoTypes are the field types treated as plain columns. Anything
+// else (a named struct type, or a slice of one) is treated as a relation
+// — see Field.IsRelation.
+var scalarGoTypes = map[string]bool{
+	"string": true, "bool": true,
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"float32": true, "float64": true,
+	"byte": true, "rune": true,
+	"time.Time": true,
+}
+
 // Field is one struct field annotated with a `goninja` tag.
 type Field struct {
 	// Name is the Go field name, e.g. "Title".
@@ -32,6 +46,17 @@ func (f Field) HasTag(tag string) bool {
 	return false
 }
 
+// IsRelation reports whether the field's type is not a plain scalar column
+// — i.e. a named struct type (or slice of one), such as a GORM
+// belongs-to/has-many association. Retrieve uses this to decide which
+// fields to Preload.
+func (f Field) IsRelation() bool {
+	t := strings.TrimPrefix(f.GoType, "*")
+	t = strings.TrimPrefix(t, "[]")
+	t = strings.TrimPrefix(t, "*")
+	return !scalarGoTypes[t]
+}
+
 // Model is a struct type discovered in the models package.
 type Model struct {
 	// Name is the Go type name, e.g. "Task".
@@ -53,6 +78,11 @@ func (m Model) RetrieveFields() []Field {
 // CreateFields returns the fields accepted on create.
 func (m Model) CreateFields() []Field {
 	return m.fieldsWithTag("create")
+}
+
+// UpdateFields returns the fields accepted on update.
+func (m Model) UpdateFields() []Field {
+	return m.fieldsWithTag("update")
 }
 
 func (m Model) fieldsWithTag(tag string) []Field {
