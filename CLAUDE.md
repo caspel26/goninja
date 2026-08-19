@@ -118,11 +118,24 @@ gate) and `scripts/coverage_badge.sh` (regenerates the tracked
 regenerated and committed by hand, not by CI, since `main` requires a PR
 and blocks direct pushes, so a CI bot commit would just fail against branch
 protection). `internal/codegen` already had a real test suite from earlier
-phases. Remaining Phase 7 items: `goninja.NewTestServer(resource)` for
-boilerplate-free end-to-end resource tests, and an in-memory SQLite
-test-DB helper for a user's own resource tests (distinct from the
-test-only sqlite dependency above, which only backs the framework's own
-tests). Don't over-build beyond what the current phase calls for without
+phases. Phase 7's remaining two items — `goninja.NewTestServer(resource)`
+and an in-memory SQLite test-DB helper for a user's own resource tests —
+shipped together as a new subpackage, `goninjatest`
+(`goninjatest.NewDB(t, models...)` / `goninjatest.NewServer(t,
+resources...)`), rather than as root-package functions: the same
+optional/self-contained split rationale as `openapi`/`docsui`/`id` applies
+here too — only test code imports `goninjatest`, and it pulls in
+`"testing"` plus the sqlite driver, neither of which a production build
+needs. `NewServer` takes any number of `goninja.Resource` (the same
+interface `API.Mount` takes) and mounts them on a plain `httptest.Server`
+with no OpenAPI merging or Config/auth wiring, since a resource test
+exercises routes directly. Verified against a real generated resource, not
+just a hand-written fake: `examples/prototype/author_resource_test.go`
+drives `api.NewAuthorResource(db)` through `goninjatest` end to end (POST
+then GET, checking the `ListEnvelope` total) — no Postgres needed, since
+generated resource code has no Postgres-specific behavior and plain GORM
+against in-memory SQLite exercises it identically. This closes out Phase
+7. Don't over-build beyond what the current phase calls for without
 checking the plan.
 
 **Ad hoc architectural change (2026-08-19, not a plan item, two revisions
@@ -189,7 +202,7 @@ make build               # go build ./...
 make test                # go test ./...
 make vet                 # go vet ./...
 make fmt                 # gofmt -l . (lists unformatted files)
-make cover               # coverage for . + internal/codegen + docsui/id/openapi; make cover THRESHOLD=70 to fail below it (CI does this)
+make cover               # coverage for . + internal/codegen + docsui/id/openapi/goninjatest; make cover THRESHOLD=70 to fail below it (CI does this)
 make cover-badge         # regenerate coverage-badge.json (README badge) from the last `make cover` run
 make generate-prototype  # regenerate examples/prototype/internal/api from examples/prototype/models
 make run-prototype       # generate-prototype, then run the example server on :8080 (needs PROTOTYPE_DSN, see below)
@@ -316,12 +329,25 @@ Three pieces:
      else.
    - **`id`** (standalone): `NewUUID()`, used by `Create` when a model's ID
      field is a `string` (UUID primary key).
+   - **`goninjatest`** (depends on root `goninja`, for the `Resource`
+     interface `NewServer` takes): test-only helpers, not meant to be
+     imported by production code — `NewDB(t, models...)` opens and
+     `AutoMigrate`s an in-memory SQLite `*gorm.DB`; `NewServer(t,
+     resources...)` mounts any number of `goninja.Resource` on a plain
+     `httptest.Server` (`Register(mux)` only — no OpenAPI merging or
+     Config/auth wiring, since a resource test exercises routes directly).
+     Both clean up via `t.Cleanup`. This is Phase 7's `NewTestServer` +
+     SQLite-test-DB-helper items, shipped together as one subpackage rather
+     than two root-package functions, for the same optional/self-contained
+     reasoning `openapi`/`docsui`/`id` were split out for: only test code
+     ever imports it.
 
 3. **`cmd/goninja`** — the CLI (`goninja generate`), a thin flag-parsing
    wrapper around `internal/codegen`.
 
 **`examples/prototype`** exercises the whole loop end to end against real
 Postgres and is the concrete proof for the Phase 0-2 exit criteria:
+
 - `models/task.go`, `models/author.go`, `models/book.go` — three models;
   `Book.Author` is a real GORM belongs-to relation (`AuthorID` + `Author`
   field, inferred by GORM's naming convention, no explicit `foreignKey`

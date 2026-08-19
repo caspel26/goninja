@@ -130,14 +130,15 @@ $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
 Hooks, per-method overriding, custom path/route config, a global default
-auth policy + middleware, and a per-field choice between nesting a
-relation and exposing just its ID (all below) are built. The runtime is
-the root `goninja` package (`BaseResource`, error types, hooks, auth,
-config, pagination, validation) plus three focused subpackages —
-`openapi` (standalone OpenAPI 3.0 types), `docsui` (pluggable docs UI,
-depends on `openapi`), and `id` (UUID helper) — each with its own test
-suite (`make cover` for coverage across all of them plus
-`internal/codegen`, enforced at 70% in CI).
+auth policy + middleware, a per-field choice between nesting a relation
+and exposing just its ID (all below), and end-to-end resource testing via
+`goninjatest` are built. The runtime is the root `goninja` package
+(`BaseResource`, error types, hooks, auth, config, pagination, validation)
+plus four focused subpackages — `openapi` (standalone OpenAPI 3.0 types),
+`docsui` (pluggable docs UI, depends on `openapi`), `id` (UUID helper), and
+`goninjatest` (in-memory SQLite + httptest helpers for testing your own
+resources) — each with its own test suite (`make cover` for coverage
+across all of them plus `internal/codegen`, enforced at 70% in CI).
 
 ### Generated docs UI
 
@@ -413,6 +414,32 @@ Author Author `goninja:"retrieve,byid"` // {"author_id": "..."} — no nesting, 
 
 Useful when a caller only ever needs the reference, not the full related
 object, and the extra join/preload would be wasted work.
+
+### Testing your own resources
+
+`goninjatest` (a separate module-level package, like `openapi`/`docsui`/`id`
+— only test code needs to import it) gets a resource from zero to a real
+HTTP request in a few lines: `NewDB` opens and `AutoMigrate`s an in-memory
+SQLite database, `NewServer` mounts any number of resources on a fresh
+`httptest.Server`. Both clean up after themselves via `t.Cleanup`.
+
+```go
+func TestBookResource_Create(t *testing.T) {
+    db := goninjatest.NewDB(t, &models.Book{}, &models.Author{})
+    srv := goninjatest.NewServer(t, api.NewBookResource(db))
+
+    resp, err := http.Post(srv.URL+"/books", "application/json",
+        strings.NewReader(`{"title":"Dune","author_id":"...","price":9.99}`))
+    if err != nil || resp.StatusCode != http.StatusCreated {
+        t.Fatalf("POST /books: err=%v status=%v", err, resp.StatusCode)
+    }
+}
+```
+
+No Postgres, no hand-rolled `httptest.NewServer(mux)` boilerplate, no
+`gorm.Open` call to remember the driver for — generated resource code has
+no Postgres-specific behavior, so the same in-memory SQLite connection
+exercises it end to end.
 
 ## Contributing
 
