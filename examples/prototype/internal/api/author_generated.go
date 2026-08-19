@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -15,47 +15,73 @@ import (
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
-// AuthorListSchema is the shape returned by GET /authors.
-type AuthorListSchema struct {
-	ID   int64  `json:"id"`
+// AuthorList is the shape returned by GET /authors,
+// one item per row of the "items" field of goninja.ListEnvelope.
+type AuthorList struct {
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-// AuthorRetrieveSchema is the shape returned by GET /authors/{id}.
+// AuthorRetrieve is the shape returned by GET /authors/{id}.
 // A relation field (e.g. Author) is nested as that model's own
-// RetrieveSchema, never the raw related struct — output schemas are
+// Retrieve type, never the raw related struct — output types are
 // always separate from the model, so a sensitive field can't leak into a
 // response just because it exists on the related struct either.
-type AuthorRetrieveSchema struct {
-	ID   int64  `json:"id"`
+type AuthorRetrieve struct {
+	ID   string `json:"id"`
 	Name string `json:"name"`
 	Bio  string `json:"bio"`
 }
 
-// AuthorCreateSchema is the shape accepted by POST /authors.
+// AuthorCreate is the shape accepted by POST /authors.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
 // the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
-type AuthorCreateSchema struct {
+type AuthorCreate struct {
 	Name string `json:"name" validate:"required,max=120"`
 	Bio  string `json:"bio" validate:"max=2000"`
 }
 
-// AuthorUpdateSchema is the shape accepted by PUT /authors/{id}.
-type AuthorUpdateSchema struct {
+// AuthorUpdate is the shape accepted by PUT /authors/{id}.
+type AuthorUpdate struct {
 	Name string `json:"name" validate:"required,max=120"`
 	Bio  string `json:"bio" validate:"max=2000"`
 }
 
-func toAuthorListSchema(m *models.Author) AuthorListSchema {
-	return AuthorListSchema{
+// AuthorFilters is the shape parsed from GET /authors
+// query parameters (plan section 5.5/Fase 4): one exact-match pointer field
+// per `filter`-tagged model field, plus Min/Max range pointers for numeric
+// ones, plus Limit/Offset/Order shared by every model's list query. A nil
+// field means "no filter" — List only adds a WHERE clause for the ones the
+// caller actually set.
+type AuthorFilters struct {
+	Name   *string
+	Limit  int
+	Offset int
+	// Order is a list-field JSON name, optionally "-"-prefixed for
+	// descending (e.g. "-created_at"). Unknown field names are ignored.
+	Order string
+}
+
+// authorOrderableColumns whitelists which query values
+// "order" accepts — every list field, keyed and valued by its JSON name
+// (assumed to match the actual DB column, per this model's `json` tags).
+// Only ever indexed with a known key, never interpolated from user input
+// directly, so this doubles as the SQL-injection guard for ORDER BY.
+var authorOrderableColumns = map[string]string{
+	"id":   "id",
+	"name": "name",
+}
+
+func toAuthorList(m *models.Author) AuthorList {
+	return AuthorList{
 		ID:   m.ID,
 		Name: m.Name,
 	}
 }
 
-func toAuthorRetrieveSchema(m *models.Author) AuthorRetrieveSchema {
-	return AuthorRetrieveSchema{
+func toAuthorRetrieve(m *models.Author) AuthorRetrieve {
+	return AuthorRetrieve{
 		ID:   m.ID,
 		Name: m.Name,
 		Bio:  m.Bio,
@@ -76,37 +102,61 @@ func NewAuthorResource(db *gorm.DB) *AuthorResource {
 	return r
 }
 
-func (r *AuthorResource) List(ctx context.Context) ([]AuthorListSchema, error) {
+// List applies f's filters/ordering, counts the total matching rows before
+// paginating, and returns Limit/Offset rows plus that total — never a
+// Preload, by construction, which is why list/retrieve are separate tags
+// (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorList, int64, error) {
+	q := r.DB(ctx).Model(&models.Author{})
+	if f.Name != nil {
+		q = q.Where("name = ?", *f.Name)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if f.Order != "" {
+		field, desc := strings.CutPrefix(f.Order, "-")
+		if col, ok := authorOrderableColumns[field]; ok {
+			dir := "ASC"
+			if desc {
+				dir = "DESC"
+			}
+			q = q.Order(col + " " + dir)
+		}
+	}
+
 	var items []models.Author
-	if err := r.DB(ctx).Find(&items).Error; err != nil {
-		return nil, err
+	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+		return nil, 0, err
 	}
-	out := make([]AuthorListSchema, 0, len(items))
+	out := make([]AuthorList, 0, len(items))
 	for i := range items {
-		out = append(out, toAuthorListSchema(&items[i]))
+		out = append(out, toAuthorList(&items[i]))
 	}
-	return out, nil
+	return out, total, nil
 }
 
-// Retrieve preloads every relation field carried on the retrieve schema —
-// list never does, by construction, which is why list/retrieve are
-// separate tags (plan section 5.5): it's the guarantee against N+1, not an
-// implementation detail.
-func (r *AuthorResource) Retrieve(ctx context.Context, id int64) (*AuthorRetrieveSchema, error) {
+// Retrieve preloads every relation field carried on the retrieve type —
+// list never does, by construction (see List above).
+func (r *AuthorResource) Retrieve(ctx context.Context, id string) (*AuthorRetrieve, error) {
 	q := r.DB(ctx)
 
 	var m models.Author
-	if err := q.First(&m, id).Error; err != nil {
+	if err := q.First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "author", ID: id}
 		}
 		return nil, err
 	}
-	out := toAuthorRetrieveSchema(&m)
+	out := toAuthorRetrieve(&m)
 	return &out, nil
 }
 
-func (r *AuthorResource) Create(ctx context.Context, in AuthorCreateSchema) (*AuthorRetrieveSchema, error) {
+func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
@@ -114,18 +164,21 @@ func (r *AuthorResource) Create(ctx context.Context, in AuthorCreateSchema) (*Au
 		Name: in.Name,
 		Bio:  in.Bio,
 	}
+	if m.ID == "" {
+		m.ID = goninja.NewUUID()
+	}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	return r.Retrieve(ctx, m.ID)
 }
 
-func (r *AuthorResource) Update(ctx context.Context, id int64, in AuthorUpdateSchema) (*AuthorRetrieveSchema, error) {
+func (r *AuthorResource) Update(ctx context.Context, id string, in AuthorUpdate) (*AuthorRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Author
-	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "author", ID: id}
 		}
@@ -139,8 +192,8 @@ func (r *AuthorResource) Update(ctx context.Context, id int64, in AuthorUpdateSc
 	return r.Retrieve(ctx, id)
 }
 
-func (r *AuthorResource) Delete(ctx context.Context, id int64) error {
-	res := r.DB(ctx).Delete(&models.Author{}, id)
+func (r *AuthorResource) Delete(ctx context.Context, id string) error {
+	res := r.DB(ctx).Where("id = ?", id).Delete(&models.Author{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -150,21 +203,55 @@ func (r *AuthorResource) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// parseAuthorFilters reads AuthorFilters from the request's
+// query parameters, keyed by each field's JSON name (plus "_min"/"_max" for
+// numeric range filters). A value that fails to parse is a BadRequest.
+func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
+	q := req.URL.Query()
+	var f AuthorFilters
+
+	if v := q.Get("name"); v != "" {
+		parsed := v
+		f.Name = &parsed
+	}
+
+	limit, offset, err := goninja.ParseLimitOffset(q)
+	if err != nil {
+		return f, err
+	}
+	f.Limit = limit
+	f.Offset = offset
+	f.Order = q.Get("order")
+
+	return f, nil
+}
+
 func (r *AuthorResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items, err := r.List(req.Context())
+	f, err := parseAuthorFilters(req)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, items)
+	items, total, err := r.List(req.Context(), f)
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[AuthorList]{
+		Items:  items,
+		Total:  total,
+		Limit:  f.Limit,
+		Offset: f.Offset,
+	})
 }
 
 func (r *AuthorResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
@@ -174,7 +261,7 @@ func (r *AuthorResource) retrieveHandler(w http.ResponseWriter, req *http.Reques
 }
 
 func (r *AuthorResource) createHandler(w http.ResponseWriter, req *http.Request) {
-	var in AuthorCreateSchema
+	var in AuthorCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -188,12 +275,13 @@ func (r *AuthorResource) createHandler(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *AuthorResource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
-	var in AuthorUpdateSchema
+
+	var in AuthorUpdate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -207,11 +295,12 @@ func (r *AuthorResource) updateHandler(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	if err := r.Delete(req.Context(), id); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return

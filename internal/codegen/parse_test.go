@@ -48,6 +48,36 @@ type Task struct {
 	}
 }
 
+func TestParseModels_FilterFieldsAndIDGoType(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Book struct {
+	ID    string  ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Price float64 ` + "`json:\"price\" goninja:\"list,retrieve,create,update,filter\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "book.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(models))
+	}
+
+	m := models[0]
+	if got := len(m.FilterFields()); got != 1 {
+		t.Errorf("expected 1 filter field, got %d", got)
+	}
+	if got := m.IDGoType(); got != "string" {
+		t.Errorf("expected IDGoType string, got %s", got)
+	}
+}
+
 func TestParseModels_NoTaggedStructs(t *testing.T) {
 	dir := t.TempDir()
 	src := `package models

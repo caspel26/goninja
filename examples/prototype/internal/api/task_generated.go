@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -15,49 +16,76 @@ import (
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
-// TaskListSchema is the shape returned by GET /tasks.
-type TaskListSchema struct {
-	ID    int64  `json:"id"`
+// TaskList is the shape returned by GET /tasks,
+// one item per row of the "items" field of goninja.ListEnvelope.
+type TaskList struct {
+	ID    string `json:"id"`
 	Title string `json:"title"`
 	Done  bool   `json:"done"`
 }
 
-// TaskRetrieveSchema is the shape returned by GET /tasks/{id}.
+// TaskRetrieve is the shape returned by GET /tasks/{id}.
 // A relation field (e.g. Author) is nested as that model's own
-// RetrieveSchema, never the raw related struct — output schemas are
+// Retrieve type, never the raw related struct — output types are
 // always separate from the model, so a sensitive field can't leak into a
 // response just because it exists on the related struct either.
-type TaskRetrieveSchema struct {
-	ID    int64  `json:"id"`
+type TaskRetrieve struct {
+	ID    string `json:"id"`
 	Title string `json:"title"`
 	Done  bool   `json:"done"`
 }
 
-// TaskCreateSchema is the shape accepted by POST /tasks.
+// TaskCreate is the shape accepted by POST /tasks.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
 // the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
-type TaskCreateSchema struct {
+type TaskCreate struct {
 	Title string `json:"title" validate:"required,max=200"`
 	Done  bool   `json:"done"`
 }
 
-// TaskUpdateSchema is the shape accepted by PUT /tasks/{id}.
-type TaskUpdateSchema struct {
+// TaskUpdate is the shape accepted by PUT /tasks/{id}.
+type TaskUpdate struct {
 	Title string `json:"title" validate:"required,max=200"`
 	Done  bool   `json:"done"`
 }
 
-func toTaskListSchema(m *models.Task) TaskListSchema {
-	return TaskListSchema{
+// TaskFilters is the shape parsed from GET /tasks
+// query parameters (plan section 5.5/Fase 4): one exact-match pointer field
+// per `filter`-tagged model field, plus Min/Max range pointers for numeric
+// ones, plus Limit/Offset/Order shared by every model's list query. A nil
+// field means "no filter" — List only adds a WHERE clause for the ones the
+// caller actually set.
+type TaskFilters struct {
+	Done   *bool
+	Limit  int
+	Offset int
+	// Order is a list-field JSON name, optionally "-"-prefixed for
+	// descending (e.g. "-created_at"). Unknown field names are ignored.
+	Order string
+}
+
+// taskOrderableColumns whitelists which query values
+// "order" accepts — every list field, keyed and valued by its JSON name
+// (assumed to match the actual DB column, per this model's `json` tags).
+// Only ever indexed with a known key, never interpolated from user input
+// directly, so this doubles as the SQL-injection guard for ORDER BY.
+var taskOrderableColumns = map[string]string{
+	"id":    "id",
+	"title": "title",
+	"done":  "done",
+}
+
+func toTaskList(m *models.Task) TaskList {
+	return TaskList{
 		ID:    m.ID,
 		Title: m.Title,
 		Done:  m.Done,
 	}
 }
 
-func toTaskRetrieveSchema(m *models.Task) TaskRetrieveSchema {
-	return TaskRetrieveSchema{
+func toTaskRetrieve(m *models.Task) TaskRetrieve {
+	return TaskRetrieve{
 		ID:    m.ID,
 		Title: m.Title,
 		Done:  m.Done,
@@ -78,37 +106,61 @@ func NewTaskResource(db *gorm.DB) *TaskResource {
 	return r
 }
 
-func (r *TaskResource) List(ctx context.Context) ([]TaskListSchema, error) {
+// List applies f's filters/ordering, counts the total matching rows before
+// paginating, and returns Limit/Offset rows plus that total — never a
+// Preload, by construction, which is why list/retrieve are separate tags
+// (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error) {
+	q := r.DB(ctx).Model(&models.Task{})
+	if f.Done != nil {
+		q = q.Where("done = ?", *f.Done)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if f.Order != "" {
+		field, desc := strings.CutPrefix(f.Order, "-")
+		if col, ok := taskOrderableColumns[field]; ok {
+			dir := "ASC"
+			if desc {
+				dir = "DESC"
+			}
+			q = q.Order(col + " " + dir)
+		}
+	}
+
 	var items []models.Task
-	if err := r.DB(ctx).Find(&items).Error; err != nil {
-		return nil, err
+	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+		return nil, 0, err
 	}
-	out := make([]TaskListSchema, 0, len(items))
+	out := make([]TaskList, 0, len(items))
 	for i := range items {
-		out = append(out, toTaskListSchema(&items[i]))
+		out = append(out, toTaskList(&items[i]))
 	}
-	return out, nil
+	return out, total, nil
 }
 
-// Retrieve preloads every relation field carried on the retrieve schema —
-// list never does, by construction, which is why list/retrieve are
-// separate tags (plan section 5.5): it's the guarantee against N+1, not an
-// implementation detail.
-func (r *TaskResource) Retrieve(ctx context.Context, id int64) (*TaskRetrieveSchema, error) {
+// Retrieve preloads every relation field carried on the retrieve type —
+// list never does, by construction (see List above).
+func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, error) {
 	q := r.DB(ctx)
 
 	var m models.Task
-	if err := q.First(&m, id).Error; err != nil {
+	if err := q.First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
 		return nil, err
 	}
-	out := toTaskRetrieveSchema(&m)
+	out := toTaskRetrieve(&m)
 	return &out, nil
 }
 
-func (r *TaskResource) Create(ctx context.Context, in TaskCreateSchema) (*TaskRetrieveSchema, error) {
+func (r *TaskResource) Create(ctx context.Context, in TaskCreate) (*TaskRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
@@ -116,18 +168,21 @@ func (r *TaskResource) Create(ctx context.Context, in TaskCreateSchema) (*TaskRe
 		Title: in.Title,
 		Done:  in.Done,
 	}
+	if m.ID == "" {
+		m.ID = goninja.NewUUID()
+	}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	return r.Retrieve(ctx, m.ID)
 }
 
-func (r *TaskResource) Update(ctx context.Context, id int64, in TaskUpdateSchema) (*TaskRetrieveSchema, error) {
+func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*TaskRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Task
-	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
@@ -141,8 +196,8 @@ func (r *TaskResource) Update(ctx context.Context, id int64, in TaskUpdateSchema
 	return r.Retrieve(ctx, id)
 }
 
-func (r *TaskResource) Delete(ctx context.Context, id int64) error {
-	res := r.DB(ctx).Delete(&models.Task{}, id)
+func (r *TaskResource) Delete(ctx context.Context, id string) error {
+	res := r.DB(ctx).Where("id = ?", id).Delete(&models.Task{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -152,21 +207,58 @@ func (r *TaskResource) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// parseTaskFilters reads TaskFilters from the request's
+// query parameters, keyed by each field's JSON name (plus "_min"/"_max" for
+// numeric range filters). A value that fails to parse is a BadRequest.
+func parseTaskFilters(req *http.Request) (TaskFilters, error) {
+	q := req.URL.Query()
+	var f TaskFilters
+
+	if v := q.Get("done"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid done"}
+		}
+		f.Done = &parsed
+	}
+
+	limit, offset, err := goninja.ParseLimitOffset(q)
+	if err != nil {
+		return f, err
+	}
+	f.Limit = limit
+	f.Offset = offset
+	f.Order = q.Get("order")
+
+	return f, nil
+}
+
 func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items, err := r.List(req.Context())
+	f, err := parseTaskFilters(req)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, items)
+	items, total, err := r.List(req.Context(), f)
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[TaskList]{
+		Items:  items,
+		Total:  total,
+		Limit:  f.Limit,
+		Offset: f.Offset,
+	})
 }
 
 func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
@@ -176,7 +268,7 @@ func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
-	var in TaskCreateSchema
+	var in TaskCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -190,12 +282,13 @@ func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
-	var in TaskUpdateSchema
+
+	var in TaskUpdate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -209,11 +302,12 @@ func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	if err := r.Delete(req.Context(), id); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return

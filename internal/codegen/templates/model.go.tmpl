@@ -7,7 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+{{- if .Model.NeedsStrconv}}
 	"strconv"
+{{- end}}
+{{- if .Model.UsesTime}}
+	"time"
+{{- end}}
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -16,55 +22,108 @@ import (
 )
 
 {{$mt := printf "%s.%s" .ModelsPkg .Model.Name}}
+{{$idType := .Model.IDGoType}}
 
-// {{.Model.Name}}ListSchema is the shape returned by GET /{{.Model.NameLower}}s.
-type {{.Model.Name}}ListSchema struct {
+{{/* parseID reads the path {id} value as the model's ID type, writing a
+BadRequest response and returning early (via the "return" the caller must
+place right after) on failure. */}}
+{{define "parseID"}}
+{{- if eq .Model.IDGoType "int64"}}
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		return
+	}
+{{- else}}
+	id := req.PathValue("id")
+	if id == "" {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		return
+	}
+{{- end}}
+{{end}}
+
+// {{.Model.Name}}List is the shape returned by GET /{{.Model.NameLower}}s,
+// one item per row of the "items" field of goninja.ListEnvelope.
+type {{.Model.Name}}List struct {
 {{- range .Model.ListFields}}
 	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"`
 {{- end}}
 }
 
-// {{.Model.Name}}RetrieveSchema is the shape returned by GET /{{.Model.NameLower}}s/{id}.
+// {{.Model.Name}}Retrieve is the shape returned by GET /{{.Model.NameLower}}s/{id}.
 // A relation field (e.g. Author) is nested as that model's own
-// RetrieveSchema, never the raw related struct — output schemas are
+// Retrieve type, never the raw related struct — output types are
 // always separate from the model, so a sensitive field can't leak into a
 // response just because it exists on the related struct either.
-type {{.Model.Name}}RetrieveSchema struct {
+type {{.Model.Name}}Retrieve struct {
 {{- range .Model.RetrieveFields}}
-	{{.Name}} {{if .IsRelation}}{{.GoType}}RetrieveSchema{{else}}{{.GoType}}{{end}} `json:"{{.JSONName}}"`
+	{{.Name}} {{if .IsRelation}}{{.GoType}}Retrieve{{else}}{{.GoType}}{{end}} `json:"{{.JSONName}}"`
 {{- end}}
 }
 
-// {{.Model.Name}}CreateSchema is the shape accepted by POST /{{.Model.NameLower}}s.
+// {{.Model.Name}}Create is the shape accepted by POST /{{.Model.NameLower}}s.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
 // the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
-type {{.Model.Name}}CreateSchema struct {
+type {{.Model.Name}}Create struct {
 {{- range .Model.CreateFields}}
 	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
-// {{.Model.Name}}UpdateSchema is the shape accepted by PUT /{{.Model.NameLower}}s/{id}.
-type {{.Model.Name}}UpdateSchema struct {
+// {{.Model.Name}}Update is the shape accepted by PUT /{{.Model.NameLower}}s/{id}.
+type {{.Model.Name}}Update struct {
 {{- range .Model.UpdateFields}}
 	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
-func to{{.Model.Name}}ListSchema(m *{{$mt}}) {{.Model.Name}}ListSchema {
-	return {{.Model.Name}}ListSchema{
+// {{.Model.Name}}Filters is the shape parsed from GET /{{.Model.NameLower}}s
+// query parameters (plan section 5.5/Fase 4): one exact-match pointer field
+// per `filter`-tagged model field, plus Min/Max range pointers for numeric
+// ones, plus Limit/Offset/Order shared by every model's list query. A nil
+// field means "no filter" — List only adds a WHERE clause for the ones the
+// caller actually set.
+type {{.Model.Name}}Filters struct {
+{{- range .Model.FilterFields}}
+	{{.Name}} *{{.GoType}}
+{{- if .IsNumeric}}
+	{{.Name}}Min *{{.GoType}}
+	{{.Name}}Max *{{.GoType}}
+{{- end}}
+{{- end}}
+	Limit  int
+	Offset int
+	// Order is a list-field JSON name, optionally "-"-prefixed for
+	// descending (e.g. "-created_at"). Unknown field names are ignored.
+	Order string
+}
+
+// {{.Model.NameLower}}OrderableColumns whitelists which query values
+// "order" accepts — every list field, keyed and valued by its JSON name
+// (assumed to match the actual DB column, per this model's `json` tags).
+// Only ever indexed with a known key, never interpolated from user input
+// directly, so this doubles as the SQL-injection guard for ORDER BY.
+var {{.Model.NameLower}}OrderableColumns = map[string]string{
+{{- range .Model.ListFields}}
+	"{{.JSONName}}": "{{.JSONName}}",
+{{- end}}
+}
+
+func to{{.Model.Name}}List(m *{{$mt}}) {{.Model.Name}}List {
+	return {{.Model.Name}}List{
 {{- range .Model.ListFields}}
 		{{.Name}}: m.{{.Name}},
 {{- end}}
 	}
 }
 
-func to{{.Model.Name}}RetrieveSchema(m *{{$mt}}) {{.Model.Name}}RetrieveSchema {
-	return {{.Model.Name}}RetrieveSchema{
+func to{{.Model.Name}}Retrieve(m *{{$mt}}) {{.Model.Name}}Retrieve {
+	return {{.Model.Name}}Retrieve{
 {{- range .Model.RetrieveFields}}
 {{- if .IsRelation}}
-		{{.Name}}: to{{.GoType}}RetrieveSchema(&m.{{.Name}}),
+		{{.Name}}: to{{.GoType}}Retrieve(&m.{{.Name}}),
 {{- else}}
 		{{.Name}}: m.{{.Name}},
 {{- end}}
@@ -86,23 +145,57 @@ func New{{.Model.Name}}Resource(db *gorm.DB) *{{.Model.Name}}Resource {
 	return r
 }
 
-func (r *{{.Model.Name}}Resource) List(ctx context.Context) ([]{{.Model.Name}}ListSchema, error) {
+// List applies f's filters/ordering, counts the total matching rows before
+// paginating, and returns Limit/Offset rows plus that total — never a
+// Preload, by construction, which is why list/retrieve are separate tags
+// (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *{{.Model.Name}}Resource) List(ctx context.Context, f {{.Model.Name}}Filters) ([]{{.Model.Name}}List, int64, error) {
+	q := r.DB(ctx).Model(&{{$mt}}{})
+{{- range .Model.FilterFields}}
+	if f.{{.Name}} != nil {
+		q = q.Where("{{.JSONName}} = ?", *f.{{.Name}})
+	}
+{{- if .IsNumeric}}
+	if f.{{.Name}}Min != nil {
+		q = q.Where("{{.JSONName}} >= ?", *f.{{.Name}}Min)
+	}
+	if f.{{.Name}}Max != nil {
+		q = q.Where("{{.JSONName}} <= ?", *f.{{.Name}}Max)
+	}
+{{- end}}
+{{- end}}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if f.Order != "" {
+		field, desc := strings.CutPrefix(f.Order, "-")
+		if col, ok := {{.Model.NameLower}}OrderableColumns[field]; ok {
+			dir := "ASC"
+			if desc {
+				dir = "DESC"
+			}
+			q = q.Order(col + " " + dir)
+		}
+	}
+
 	var items []{{$mt}}
-	if err := r.DB(ctx).Find(&items).Error; err != nil {
-		return nil, err
+	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+		return nil, 0, err
 	}
-	out := make([]{{.Model.Name}}ListSchema, 0, len(items))
+	out := make([]{{.Model.Name}}List, 0, len(items))
 	for i := range items {
-		out = append(out, to{{.Model.Name}}ListSchema(&items[i]))
+		out = append(out, to{{.Model.Name}}List(&items[i]))
 	}
-	return out, nil
+	return out, total, nil
 }
 
-// Retrieve preloads every relation field carried on the retrieve schema —
-// list never does, by construction, which is why list/retrieve are
-// separate tags (plan section 5.5): it's the guarantee against N+1, not an
-// implementation detail.
-func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id int64) (*{{.Model.Name}}RetrieveSchema, error) {
+// Retrieve preloads every relation field carried on the retrieve type —
+// list never does, by construction (see List above).
+func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id {{$idType}}) (*{{.Model.Name}}Retrieve, error) {
 	q := r.DB(ctx)
 {{- range .Model.RetrieveFields}}
 {{- if .IsRelation}}
@@ -111,17 +204,17 @@ func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id int64) (*{{.M
 {{- end}}
 
 	var m {{$mt}}
-	if err := q.First(&m, id).Error; err != nil {
+	if err := q.First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "{{.Model.NameLower}}", ID: id}
 		}
 		return nil, err
 	}
-	out := to{{.Model.Name}}RetrieveSchema(&m)
+	out := to{{.Model.Name}}Retrieve(&m)
 	return &out, nil
 }
 
-func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}CreateSchema) (*{{.Model.Name}}RetrieveSchema, error) {
+func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}Create) (*{{.Model.Name}}Retrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
@@ -130,18 +223,23 @@ func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}
 		{{.Name}}: in.{{.Name}},
 {{- end}}
 	}
+{{- if eq $idType "string"}}
+	if m.ID == "" {
+		m.ID = goninja.NewUUID()
+	}
+{{- end}}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	return r.Retrieve(ctx, m.ID)
 }
 
-func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id int64, in {{.Model.Name}}UpdateSchema) (*{{.Model.Name}}RetrieveSchema, error) {
+func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id {{$idType}}, in {{.Model.Name}}Update) (*{{.Model.Name}}Retrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m {{$mt}}
-	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "{{.Model.NameLower}}", ID: id}
 		}
@@ -156,8 +254,8 @@ func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id int64, in {{.Mo
 	return r.Retrieve(ctx, id)
 }
 
-func (r *{{.Model.Name}}Resource) Delete(ctx context.Context, id int64) error {
-	res := r.DB(ctx).Delete(&{{$mt}}{}, id)
+func (r *{{.Model.Name}}Resource) Delete(ctx context.Context, id {{$idType}}) error {
+	res := r.DB(ctx).Where("id = ?", id).Delete(&{{$mt}}{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -167,21 +265,109 @@ func (r *{{.Model.Name}}Resource) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// parse{{.Model.Name}}Filters reads {{.Model.Name}}Filters from the request's
+// query parameters, keyed by each field's JSON name (plus "_min"/"_max" for
+// numeric range filters). A value that fails to parse is a BadRequest.
+func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, error) {
+	q := req.URL.Query()
+	var f {{.Model.Name}}Filters
+
+{{range .Model.FilterFields}}
+	if v := q.Get("{{.JSONName}}"); v != "" {
+{{- if .IsBool}}
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
+		}
+		f.{{.Name}} = &parsed
+{{- else if .IsString}}
+		parsed := v
+		f.{{.Name}} = &parsed
+{{- else if .IsFloat}}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}} = &parsed
+{{- else}}
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}} = &parsed
+{{- end}}
+	}
+{{- if .IsNumeric}}
+	if v := q.Get("{{.JSONName}}_min"); v != "" {
+{{- if .IsFloat}}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_min"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}}Min = &parsed
+{{- else}}
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_min"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}}Min = &parsed
+{{- end}}
+	}
+	if v := q.Get("{{.JSONName}}_max"); v != "" {
+{{- if .IsFloat}}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_max"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}}Max = &parsed
+{{- else}}
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_max"}
+		}
+		parsed := {{.GoType}}(n)
+		f.{{.Name}}Max = &parsed
+{{- end}}
+	}
+{{- end}}
+{{end}}
+	limit, offset, err := goninja.ParseLimitOffset(q)
+	if err != nil {
+		return f, err
+	}
+	f.Limit = limit
+	f.Offset = offset
+	f.Order = q.Get("order")
+
+	return f, nil
+}
+
 func (r *{{.Model.Name}}Resource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items, err := r.List(req.Context())
+	f, err := parse{{.Model.Name}}Filters(req)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, items)
+	items, total, err := r.List(req.Context(), f)
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[{{.Model.Name}}List]{
+		Items:  items,
+		Total:  total,
+		Limit:  f.Limit,
+		Offset: f.Offset,
+	})
 }
 
 func (r *{{.Model.Name}}Resource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
-		return
-	}
+	{{- template "parseID" .}}
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
@@ -191,7 +377,7 @@ func (r *{{.Model.Name}}Resource) retrieveHandler(w http.ResponseWriter, req *ht
 }
 
 func (r *{{.Model.Name}}Resource) createHandler(w http.ResponseWriter, req *http.Request) {
-	var in {{.Model.Name}}CreateSchema
+	var in {{.Model.Name}}Create
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -205,12 +391,8 @@ func (r *{{.Model.Name}}Resource) createHandler(w http.ResponseWriter, req *http
 }
 
 func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
-		return
-	}
-	var in {{.Model.Name}}UpdateSchema
+	{{- template "parseID" .}}
+	var in {{.Model.Name}}Update
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -224,11 +406,7 @@ func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http
 }
 
 func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
-		return
-	}
+	{{- template "parseID" .}}
 	if err := r.Delete(req.Context(), id); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
