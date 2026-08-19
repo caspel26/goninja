@@ -38,3 +38,6 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+    - name: Coverage threshold
+      run: ./scripts/coverage.sh 70
