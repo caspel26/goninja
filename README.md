@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo/goninja-logo-full.png" alt="goninja" width="480">
+  <img src="docs/logo/goninja-logo-full.png" alt="goninja" width="720">
 </p>
 
 Code-first Go framework for generating complete CRUD REST APIs from
