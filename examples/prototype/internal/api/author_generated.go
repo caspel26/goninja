@@ -444,86 +444,130 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		Schema:   goninja.Schema{Type: "string"},
 	}
 
-	paths := map[string]*goninja.PathItem{
-		"/authors": {
-			Get: &goninja.Operation{
-				Summary:    "List authors",
-				Tags:       tags,
-				Parameters: listParams,
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
-					}},
+	cfg := r.resourceConfig()
+	basePath := cfg.PathOr("/authors")
+	itemPath := basePath + "/{id}"
+
+	paths := map[string]*goninja.PathItem{}
+
+	basePathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("list") {
+		basePathItem.Get = &goninja.Operation{
+			Summary:    "List authors",
+			Tags:       tags,
+			Parameters: listParams,
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
+				}},
+			},
+		}
+	}
+	if cfg.RouteEnabled("create") {
+		basePathItem.Post = &goninja.Operation{
+			Summary: "Create a author",
+			Tags:    tags,
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorCreate"}},
 				},
 			},
-			Post: &goninja.Operation{
-				Summary: "Create a author",
-				Tags:    tags,
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorCreate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"201": {Description: "Created", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
-					}},
-					"422": {Description: "Validation error"},
+			Responses: map[string]goninja.Response{
+				"201": {Description: "Created", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+				}},
+				"422": {Description: "Validation error"},
+			},
+		}
+	}
+	if basePathItem.Get != nil || basePathItem.Post != nil {
+		paths[basePath] = basePathItem
+	}
+
+	itemPathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("retrieve") {
+		itemPathItem.Get = &goninja.Operation{
+			Summary:    "Retrieve a author",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+			},
+		}
+	}
+	if cfg.RouteEnabled("update") {
+		itemPathItem.Put = &goninja.Operation{
+			Summary:    "Update a author",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
 				},
 			},
-		},
-		"/authors/{id}": {
-			Get: &goninja.Operation{
-				Summary:    "Retrieve a author",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-				},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+				"422": {Description: "Validation error"},
 			},
-			Put: &goninja.Operation{
-				Summary:    "Update a author",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-					"422": {Description: "Validation error"},
-				},
+		}
+	}
+	if cfg.RouteEnabled("delete") {
+		itemPathItem.Delete = &goninja.Operation{
+			Summary:    "Delete a author",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"204": {Description: "No content"},
+				"404": {Description: "Not found"},
 			},
-			Delete: &goninja.Operation{
-				Summary:    "Delete a author",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"204": {Description: "No content"},
-					"404": {Description: "Not found"},
-				},
-			},
-		},
+		}
+	}
+	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
+		paths[itemPath] = itemPathItem
 	}
 
 	return paths, schemas
 }
 
+// resourceConfig resolves r's ResourceConfig via r.Self(), the same
+// dispatch hooks.go and ops() use: a wrapper implementing
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
+// generated default applies.
+func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
+		return c.Config()
+	}
+	return goninja.ResourceConfig{}
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
-// Author under /authors on mux.
+// Author under /authors on mux, or under r's
+// ResourceConfig.Path/Routes override (see resourceConfig above) if one is
+// set.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /authors", r.listHandler)
-	mux.HandleFunc("POST /authors", r.createHandler)
-	mux.HandleFunc("GET /authors/{id}", r.retrieveHandler)
-	mux.HandleFunc("PUT /authors/{id}", r.updateHandler)
-	mux.HandleFunc("DELETE /authors/{id}", r.deleteHandler)
+	cfg := r.resourceConfig()
+	path := cfg.PathOr("/authors")
+	if cfg.RouteEnabled("list") {
+		mux.HandleFunc("GET "+path, r.listHandler)
+	}
+	if cfg.RouteEnabled("create") {
+		mux.HandleFunc("POST "+path, r.createHandler)
+	}
+	if cfg.RouteEnabled("retrieve") {
+		mux.HandleFunc("GET "+path+"/{id}", r.retrieveHandler)
+	}
+	if cfg.RouteEnabled("update") {
+		mux.HandleFunc("PUT "+path+"/{id}", r.updateHandler)
+	}
+	if cfg.RouteEnabled("delete") {
+		mux.HandleFunc("DELETE "+path+"/{id}", r.deleteHandler)
+	}
 }

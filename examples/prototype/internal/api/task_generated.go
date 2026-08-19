@@ -452,86 +452,130 @@ func (r *TaskResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		Schema:   goninja.Schema{Type: "string"},
 	}
 
-	paths := map[string]*goninja.PathItem{
-		"/tasks": {
-			Get: &goninja.Operation{
-				Summary:    "List tasks",
-				Tags:       tags,
-				Parameters: listParams,
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
-					}},
+	cfg := r.resourceConfig()
+	basePath := cfg.PathOr("/tasks")
+	itemPath := basePath + "/{id}"
+
+	paths := map[string]*goninja.PathItem{}
+
+	basePathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("list") {
+		basePathItem.Get = &goninja.Operation{
+			Summary:    "List tasks",
+			Tags:       tags,
+			Parameters: listParams,
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
+				}},
+			},
+		}
+	}
+	if cfg.RouteEnabled("create") {
+		basePathItem.Post = &goninja.Operation{
+			Summary: "Create a task",
+			Tags:    tags,
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskCreate"}},
 				},
 			},
-			Post: &goninja.Operation{
-				Summary: "Create a task",
-				Tags:    tags,
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskCreate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"201": {Description: "Created", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
-					}},
-					"422": {Description: "Validation error"},
+			Responses: map[string]goninja.Response{
+				"201": {Description: "Created", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+				}},
+				"422": {Description: "Validation error"},
+			},
+		}
+	}
+	if basePathItem.Get != nil || basePathItem.Post != nil {
+		paths[basePath] = basePathItem
+	}
+
+	itemPathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("retrieve") {
+		itemPathItem.Get = &goninja.Operation{
+			Summary:    "Retrieve a task",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+			},
+		}
+	}
+	if cfg.RouteEnabled("update") {
+		itemPathItem.Put = &goninja.Operation{
+			Summary:    "Update a task",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskUpdate"}},
 				},
 			},
-		},
-		"/tasks/{id}": {
-			Get: &goninja.Operation{
-				Summary:    "Retrieve a task",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-				},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+				"422": {Description: "Validation error"},
 			},
-			Put: &goninja.Operation{
-				Summary:    "Update a task",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskUpdate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-					"422": {Description: "Validation error"},
-				},
+		}
+	}
+	if cfg.RouteEnabled("delete") {
+		itemPathItem.Delete = &goninja.Operation{
+			Summary:    "Delete a task",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"204": {Description: "No content"},
+				"404": {Description: "Not found"},
 			},
-			Delete: &goninja.Operation{
-				Summary:    "Delete a task",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"204": {Description: "No content"},
-					"404": {Description: "Not found"},
-				},
-			},
-		},
+		}
+	}
+	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
+		paths[itemPath] = itemPathItem
 	}
 
 	return paths, schemas
 }
 
+// resourceConfig resolves r's ResourceConfig via r.Self(), the same
+// dispatch hooks.go and ops() use: a wrapper implementing
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
+// generated default applies.
+func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
+		return c.Config()
+	}
+	return goninja.ResourceConfig{}
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
-// Task under /tasks on mux.
+// Task under /tasks on mux, or under r's
+// ResourceConfig.Path/Routes override (see resourceConfig above) if one is
+// set.
 func (r *TaskResource) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /tasks", r.listHandler)
-	mux.HandleFunc("POST /tasks", r.createHandler)
-	mux.HandleFunc("GET /tasks/{id}", r.retrieveHandler)
-	mux.HandleFunc("PUT /tasks/{id}", r.updateHandler)
-	mux.HandleFunc("DELETE /tasks/{id}", r.deleteHandler)
+	cfg := r.resourceConfig()
+	path := cfg.PathOr("/tasks")
+	if cfg.RouteEnabled("list") {
+		mux.HandleFunc("GET "+path, r.listHandler)
+	}
+	if cfg.RouteEnabled("create") {
+		mux.HandleFunc("POST "+path, r.createHandler)
+	}
+	if cfg.RouteEnabled("retrieve") {
+		mux.HandleFunc("GET "+path+"/{id}", r.retrieveHandler)
+	}
+	if cfg.RouteEnabled("update") {
+		mux.HandleFunc("PUT "+path+"/{id}", r.updateHandler)
+	}
+	if cfg.RouteEnabled("delete") {
+		mux.HandleFunc("DELETE "+path+"/{id}", r.deleteHandler)
+	}
 }
