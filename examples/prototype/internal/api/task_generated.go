@@ -12,17 +12,14 @@ import (
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
-	"github.com/caspel26/goninja/mw"
 	"github.com/caspel26/goninja/openapi"
-	"github.com/caspel26/goninja/pagination"
-	"github.com/caspel26/goninja/validate"
 	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
 // TaskList is the shape returned by GET /tasks,
-// one item per row of the "items" field of pagination.ListEnvelope.
+// one item per row of the "items" field of goninja.ListEnvelope.
 type TaskList struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -44,7 +41,7 @@ type TaskRetrieve struct {
 
 // TaskCreate is the shape accepted by POST /tasks.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
-// the model field's own `validate` tag, and enforced by validate.Validate
+// the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
 type TaskCreate struct {
 	Title string `json:"title" validate:"required,max=200"`
@@ -195,7 +192,7 @@ func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, 
 }
 
 func (r *TaskResource) Create(ctx context.Context, in TaskCreate) (*TaskRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	m := models.Task{
@@ -212,7 +209,7 @@ func (r *TaskResource) Create(ctx context.Context, in TaskCreate) (*TaskRetrieve
 }
 
 func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*TaskRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Task
@@ -256,7 +253,7 @@ func parseTaskFilters(req *http.Request) (TaskFilters, error) {
 		f.Done = &parsed
 	}
 
-	limit, offset, err := pagination.ParseLimitOffset(q)
+	limit, offset, err := goninja.ParseLimitOffset(q)
 	if err != nil {
 		return f, err
 	}
@@ -278,7 +275,7 @@ func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, pagination.ListEnvelope[TaskList]{
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[TaskList]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -556,13 +553,13 @@ func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// mw.Configurer (plan section 5.3) customizes it, otherwise every
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *TaskResource) resourceConfig() mw.ResourceConfig {
-	if c, ok := r.Self().(mw.Configurer); ok {
+func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
 		return c.Config()
 	}
-	return mw.ResourceConfig{}
+	return goninja.ResourceConfig{}
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
@@ -570,8 +567,8 @@ func (r *TaskResource) resourceConfig() mw.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// mw.MountWithConfig — see mw/config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *TaskResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

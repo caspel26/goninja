@@ -11,17 +11,14 @@ import (
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
-	"github.com/caspel26/goninja/mw"
 	"github.com/caspel26/goninja/openapi"
-	"github.com/caspel26/goninja/pagination"
-	"github.com/caspel26/goninja/validate"
 	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
 // AuthorList is the shape returned by GET /authors,
-// one item per row of the "items" field of pagination.ListEnvelope.
+// one item per row of the "items" field of goninja.ListEnvelope.
 type AuthorList struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -42,7 +39,7 @@ type AuthorRetrieve struct {
 
 // AuthorCreate is the shape accepted by POST /authors.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
-// the model field's own `validate` tag, and enforced by validate.Validate
+// the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
 type AuthorCreate struct {
 	Name string `json:"name" validate:"required,max=120"`
@@ -191,7 +188,7 @@ func (r *AuthorResource) Retrieve(ctx context.Context, id string) (*AuthorRetrie
 }
 
 func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	m := models.Author{
@@ -208,7 +205,7 @@ func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRe
 }
 
 func (r *AuthorResource) Update(ctx context.Context, id string, in AuthorUpdate) (*AuthorRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Author
@@ -249,7 +246,7 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 		f.Name = &parsed
 	}
 
-	limit, offset, err := pagination.ParseLimitOffset(q)
+	limit, offset, err := goninja.ParseLimitOffset(q)
 	if err != nil {
 		return f, err
 	}
@@ -271,7 +268,7 @@ func (r *AuthorResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, pagination.ListEnvelope[AuthorList]{
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[AuthorList]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -548,13 +545,13 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// mw.Configurer (plan section 5.3) customizes it, otherwise every
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *AuthorResource) resourceConfig() mw.ResourceConfig {
-	if c, ok := r.Self().(mw.Configurer); ok {
+func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
 		return c.Config()
 	}
-	return mw.ResourceConfig{}
+	return goninja.ResourceConfig{}
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
@@ -562,8 +559,8 @@ func (r *AuthorResource) resourceConfig() mw.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// mw.MountWithConfig — see mw/config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

@@ -152,7 +152,7 @@ func TestGenerate_FiltersAndUUID(t *testing.T) {
 		"func (r *WidgetResource) List(ctx context.Context, f WidgetFilters) ([]WidgetList, int64, error)",
 		"func (r *WidgetResource) Retrieve(ctx context.Context, id string) (*WidgetRetrieve, error)",
 		"m.ID = id.NewUUID()",
-		"pagination.ListEnvelope[WidgetList]",
+		"goninja.ListEnvelope[WidgetList]",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)

@@ -19,10 +19,7 @@ import (
 {{- if eq .Model.IDGoType "string"}}
 	"github.com/caspel26/goninja/id"
 {{- end}}
-	"github.com/caspel26/goninja/mw"
 	"github.com/caspel26/goninja/openapi"
-	"github.com/caspel26/goninja/pagination"
-	"github.com/caspel26/goninja/validate"
 	"gorm.io/gorm"
 
 	"{{.ModelsImport}}"
@@ -51,7 +48,7 @@ place right after) on failure. */}}
 {{end}}
 
 // {{.Model.Name}}List is the shape returned by GET /{{.Model.NameLower}}s,
-// one item per row of the "items" field of pagination.ListEnvelope.
+// one item per row of the "items" field of goninja.ListEnvelope.
 type {{.Model.Name}}List struct {
 {{- range .Model.ListFields}}
 	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"`
@@ -73,7 +70,7 @@ type {{.Model.Name}}Retrieve struct {
 
 // {{.Model.Name}}Create is the shape accepted by POST /{{.Model.NameLower}}s.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
-// the model field's own `validate` tag, and enforced by validate.Validate
+// the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
 type {{.Model.Name}}Create struct {
 {{- range .Model.CreateFields}}
@@ -257,7 +254,7 @@ func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id {{$idType}}) 
 }
 
 func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}Create) (*{{.Model.Name}}Retrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	m := {{$mt}}{
@@ -277,7 +274,7 @@ func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}
 }
 
 func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id {{$idType}}, in {{.Model.Name}}Update) (*{{.Model.Name}}Retrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m {{$mt}}
@@ -378,7 +375,7 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 	}
 {{- end}}
 {{end}}
-	limit, offset, err := pagination.ParseLimitOffset(q)
+	limit, offset, err := goninja.ParseLimitOffset(q)
 	if err != nil {
 		return f, err
 	}
@@ -400,7 +397,7 @@ func (r *{{.Model.Name}}Resource) listHandler(w http.ResponseWriter, req *http.R
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, pagination.ListEnvelope[{{.Model.Name}}List]{
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[{{.Model.Name}}List]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -675,13 +672,13 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// mw.Configurer (plan section 5.3) customizes it, otherwise every
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *{{.Model.Name}}Resource) resourceConfig() mw.ResourceConfig {
-	if c, ok := r.Self().(mw.Configurer); ok {
+func (r *{{.Model.Name}}Resource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
 		return c.Config()
 	}
-	return mw.ResourceConfig{}
+	return goninja.ResourceConfig{}
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
@@ -689,8 +686,8 @@ func (r *{{.Model.Name}}Resource) resourceConfig() mw.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// mw.MountWithConfig — see mw/config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *{{.Model.Name}}Resource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

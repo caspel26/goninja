@@ -13,17 +13,14 @@ import (
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
-	"github.com/caspel26/goninja/mw"
 	"github.com/caspel26/goninja/openapi"
-	"github.com/caspel26/goninja/pagination"
-	"github.com/caspel26/goninja/validate"
 	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
 // BookList is the shape returned by GET /books,
-// one item per row of the "items" field of pagination.ListEnvelope.
+// one item per row of the "items" field of goninja.ListEnvelope.
 type BookList struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
@@ -52,7 +49,7 @@ type BookRetrieve struct {
 
 // BookCreate is the shape accepted by POST /books.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
-// the model field's own `validate` tag, and enforced by validate.Validate
+// the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
 type BookCreate struct {
 	Title     string  `json:"title" validate:"required,max=200"`
@@ -234,7 +231,7 @@ func (r *BookResource) Retrieve(ctx context.Context, id string) (*BookRetrieve, 
 }
 
 func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	m := models.Book{
@@ -253,7 +250,7 @@ func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve
 }
 
 func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*BookRetrieve, error) {
-	if err := validate.Validate(in); err != nil {
+	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Book
@@ -329,7 +326,7 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 		f.Published = &parsed
 	}
 
-	limit, offset, err := pagination.ParseLimitOffset(q)
+	limit, offset, err := goninja.ParseLimitOffset(q)
 	if err != nil {
 		return f, err
 	}
@@ -351,7 +348,7 @@ func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, pagination.ListEnvelope[BookList]{
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[BookList]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -644,13 +641,13 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// mw.Configurer (plan section 5.3) customizes it, otherwise every
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *BookResource) resourceConfig() mw.ResourceConfig {
-	if c, ok := r.Self().(mw.Configurer); ok {
+func (r *BookResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
 		return c.Config()
 	}
-	return mw.ResourceConfig{}
+	return goninja.ResourceConfig{}
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
@@ -658,8 +655,8 @@ func (r *BookResource) resourceConfig() mw.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// mw.MountWithConfig — see mw/config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *BookResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
