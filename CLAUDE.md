@@ -389,15 +389,29 @@ hand-editing anything under `examples/prototype/internal/api`.
   leak into a response just because it exists on the struct. A relation
   field on `<Model>Retrieve` is nested as the related model's own
   `Retrieve` type too, for the same reason (see `model.go.tmpl`).
-- `Field.IsRelation` (in `ir.go`) currently assumes single-value (not
-  slice/has-many) relations for schema nesting — a slice relation field
-  would generate but its schema conversion wouldn't be correct yet.
+- A relation field can be either belongs-to (a single named struct type,
+  e.g. `Author`) or has-many/reverse-FK (a slice of one, e.g. `[]Book`) —
+  `Field.IsSlice`/`RelatedGoType` (`ir.go`) tell the two apart and strip the
+  `[]` wrapper to get the element type name. A has-many field's `Retrieve`
+  type nests `[]<Related>Retrieve` (or `[]<RelatedIDGoType>` if also tagged
+  `byid` — see below), built by looping over the slice in
+  `to<Model>Retrieve` (an inlined closure per field, not a shared
+  package-level helper, for the same collision reason `Action` path-building
+  isn't factored out either — see the note near the bottom of this section).
+  `Preload("<Field>")` needs no special-casing for a slice — GORM preloads a
+  has-many the same call as a belongs-to. Only a plain slice of the related
+  struct is supported (not a slice of pointers), matching how a belongs-to
+  field is likewise assumed to be a plain struct value rather than a
+  pointer. See `examples/prototype/models/author.go`'s `Books []Book` (the
+  reverse side of `Book.Author`) for the end-to-end proof.
 - A relation field's `goninja` tag can carry a `byid` modifier (e.g.
   `goninja:"retrieve,byid"`, `Field.IsByID` in `ir.go`, plan section 5.12)
   to expose only the related model's ID instead of nesting its full
   `Retrieve` — the generated field becomes `<Field>ID` on
   `<Model>Retrieve`, JSON `<field>_id`, typed after the related model's own
-  `IDGoType`, and `Retrieve`'s query skips that field's `Preload` entirely.
+  `IDGoType` (or `[]<IDGoType>` on a has-many field, collecting each related
+  row's own `ID`), and `Retrieve`'s query skips that field's `Preload`
+  entirely.
   Since a single model's codegen has no visibility into another model's IR
   on its own, `Generate`'s `resolveByIDFields` (`generate.go`) resolves
   every byid field's related ID type across the full model list *before*

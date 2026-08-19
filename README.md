@@ -106,9 +106,10 @@ engine lives under [`internal/codegen`](internal/codegen) and
 [`examples/prototype`](examples/prototype): it parses `goninja`-tagged
 struct fields and generates typed output types plus GORM-backed CRUD
 (`net/http` handlers, transaction-aware queries, automatic preloading of
-relations on retrieve, `validate`-tag-driven input validation with
-per-field 422 responses, `filter`-tag-driven filtering with limit/offset
-pagination and ordering behind a `{items, total, limit, offset}` envelope)
+belongs-to and has-many relations on retrieve, `validate`-tag-driven input
+validation with per-field 422 responses, `filter`-tag-driven filtering with
+limit/offset pagination and ordering behind a `{items, total, limit,
+offset}` envelope)
 for any number of models, verified end to end against Postgres. A model's
 ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
 generates itself) — `examples/prototype`'s models use UUID IDs. Every
