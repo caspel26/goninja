@@ -127,42 +127,6 @@ $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 Hooks and per-method overriding (below) are built; auth is still designed
 but not yet built.
 
-### Example: create → retrieve → filter
-
-Real output from a running `examples/prototype` server — nothing edited:
-
-```console
-$ curl -s -X POST localhost:8080/authors \
-    -d '{"name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."}'
-{"id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."}
-
-$ curl -s -X POST localhost:8080/books \
-    -d '{"title":"The Left Hand of Darkness","author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","price":14.99,"published":true}'
-{"id":"0aac15c6-df8d-4696-af75-f625794b7f3a","title":"The Left Hand of Darkness",
- "author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d",
- "author":{"id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."},
- "price":14.99,"published":true,"created_at":"2026-08-19T15:19:34+02:00"}
-```
-
-`Create`/`Retrieve` preload `Author` automatically and nest it as its own
-`Retrieve` shape — no separate round trip. `List` never preloads, by
-design, so it stays lean:
-
-```console
-$ curl -s 'localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20'
-{"items":[
-  {"id":"0aac15c6-df8d-4696-af75-f625794b7f3a","title":"The Left Hand of Darkness","author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","price":14.99,"published":true,"created_at":"2026-08-19T15:19:34+02:00"},
-  {"id":"46a4b864-0d95-4e60-8db0-ce94beff83b0","title":"Book 2","author_id":"a9132a58-0531-4d98-9906-1776da5036f4","price":10,"published":true,"created_at":"2026-08-19T12:34:12+02:00"}
-],"total":2,"limit":20,"offset":0}
-```
-
-And a `validate`-tag failure never reaches the database:
-
-```console
-$ curl -s -X POST localhost:8080/books -d '{"author_id":"76f431cf-...","price":5}'   # no title
-{"code":"VALIDATION_FAILED","errors":{"title":"required"}}
-```
-
 ### Generated docs UI
 
 One call — `goninja.MountDocs(mux, doc, "/docs", ui)` — serves the merged
