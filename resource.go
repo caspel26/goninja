@@ -8,6 +8,7 @@ package goninja
 
 import (
 	"context"
+	"net/http"
 
 	"gorm.io/gorm"
 )
@@ -38,6 +39,7 @@ type BaseResource struct {
 	openAPITags      []string
 	excludedFromDocs bool
 	self             any
+	config           Config
 }
 
 // SetDB injects the base database connection. Called by the generated
@@ -111,6 +113,60 @@ func (r *BaseResource) SetSelf(self any) {
 // Self returns the value passed to SetSelf, or nil if it was never called.
 func (r *BaseResource) Self() any {
 	return r.self
+}
+
+// SetConfig injects the app-wide Config (global default auth, generic
+// middleware) this resource's generated Register(mux) uses to build its
+// handlers. Called by MountWithConfig (config.go); a resource mounted via
+// plain Mount never gets this called, so Config() stays at its zero value —
+// no global auth, no global middleware.
+func (r *BaseResource) SetConfig(cfg Config) {
+	r.config = cfg
+}
+
+// Config returns the resource's configured Config, set via SetConfig.
+func (r *BaseResource) Config() Config {
+	return r.config
+}
+
+// Protect wraps h according to this resource's global Config
+// (DefaultAuth/Middleware, config.go) and rc's per-resource AuthOverride
+// (resource_config.go): route ("list", "retrieve", "create", "update", or
+// "delete") is protected when it's named in Config.DefaultAuth.Protected or
+// rc.Auth.AlsoProtect, unless it's also explicitly named in rc.Auth.Public —
+// additive-only, so a route missing from AlsoProtect is left exactly as the
+// global default treats it, and one missing from Public is never made
+// public by omission. Config.Middleware always wraps h, protected or not;
+// Config.DefaultAuth.Middleware wraps it only when protected. Generated
+// Register(mux) methods call this around every handler they mount.
+func (r *BaseResource) Protect(route string, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
+	wrapped := http.Handler(h)
+	if r.routeProtected(route, rc) {
+		for i := len(r.config.DefaultAuth.Middleware) - 1; i >= 0; i-- {
+			wrapped = r.config.DefaultAuth.Middleware[i](wrapped)
+		}
+	}
+	for i := len(r.config.Middleware) - 1; i >= 0; i-- {
+		wrapped = r.config.Middleware[i](wrapped)
+	}
+	return wrapped.ServeHTTP
+}
+
+func (r *BaseResource) routeProtected(route string, rc ResourceConfig) bool {
+	protected := containsString(r.config.DefaultAuth.Protected, route) || containsString(rc.Auth.AlsoProtect, route)
+	if !protected {
+		return false
+	}
+	return !containsString(rc.Auth.Public, route)
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // DB returns the connection to use for this context: the enclosing

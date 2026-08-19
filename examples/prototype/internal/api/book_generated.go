@@ -647,23 +647,27 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 // Register mounts list/retrieve/create/update/delete routes for
 // Book under /books on mux, or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
-// set.
+// set. Every handler is wrapped through r.Protect, which applies this
+// resource's Config (global default auth + generic middleware, set via
+// MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain Mount has a zero Config, so Protect is a
+// no-op there.
 func (r *BookResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/books")
 	if cfg.RouteEnabled("list") {
-		mux.HandleFunc("GET "+path, r.listHandler)
+		mux.HandleFunc("GET "+path, r.Protect("list", cfg, r.listHandler))
 	}
 	if cfg.RouteEnabled("create") {
-		mux.HandleFunc("POST "+path, r.createHandler)
+		mux.HandleFunc("POST "+path, r.Protect("create", cfg, r.createHandler))
 	}
 	if cfg.RouteEnabled("retrieve") {
-		mux.HandleFunc("GET "+path+"/{id}", r.retrieveHandler)
+		mux.HandleFunc("GET "+path+"/{id}", r.Protect("retrieve", cfg, r.retrieveHandler))
 	}
 	if cfg.RouteEnabled("update") {
-		mux.HandleFunc("PUT "+path+"/{id}", r.updateHandler)
+		mux.HandleFunc("PUT "+path+"/{id}", r.Protect("update", cfg, r.updateHandler))
 	}
 	if cfg.RouteEnabled("delete") {
-		mux.HandleFunc("DELETE "+path+"/{id}", r.deleteHandler)
+		mux.HandleFunc("DELETE "+path+"/{id}", r.Protect("delete", cfg, r.deleteHandler))
 	}
 }
