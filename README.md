@@ -151,14 +151,14 @@ the whole UI:
 
 **Swagger UI**<br><sub>`docsui.SwaggerUI()` — the default</sub>
 
-<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model" width="100%">
+<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route grouped by model, including the custom POST /books/{id}/publish action alongside the generated Book CRUD routes" width="100%">
 
 </td>
 <td width="50%" align="center">
 
 **ReDoc**<br><sub>`docsui.ReDoc()` — a drop-in swap</sub>
 
-<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples" width="100%">
+<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav, showing the custom Publish a book action documented next to the generated Book routes" width="100%">
 
 </td>
 </tr>
@@ -166,12 +166,14 @@ the whole UI:
 
 Every operation expands into its request/response schema, complete with
 example values generated straight from the model's fields — no hand-written
-OpenAPI, ever:
+OpenAPI, ever. The example below is the custom `POST /books/{id}/publish`
+action from [Adding custom routes beyond CRUD](#adding-custom-routes-beyond-crud) —
+declared with a `Summary`, it's documented exactly like a generated route:
 
 <p align="center">
-<img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books operation with its request body schema and response example" width="720">
+<img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books/{id}/publish operation, its id path parameter, and 200/404 responses" width="720">
 <br>
-<sub>An expanded <code>POST /books</code> operation in Swagger UI</sub>
+<sub>An expanded <code>POST /books/{id}/publish</code> action in Swagger UI</sub>
 </p>
 
 ### Extending a resource: hooks and overrides
