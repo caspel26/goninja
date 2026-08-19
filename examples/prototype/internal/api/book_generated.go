@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -34,15 +35,18 @@ type BookRetrieveSchema struct {
 }
 
 // BookCreateSchema is the shape accepted by POST /books.
+// `validate` tags (go-playground/validator syntax) are copied verbatim from
+// the model field's own `validate` tag, and enforced by goninja.Validate
+// before Create runs.
 type BookCreateSchema struct {
-	Title    string `json:"title"`
-	AuthorID int64  `json:"author_id"`
+	Title    string `json:"title" validate:"required,max=200"`
+	AuthorID int64  `json:"author_id" validate:"required,gt=0"`
 }
 
 // BookUpdateSchema is the shape accepted by PUT /books/{id}.
 type BookUpdateSchema struct {
-	Title    string `json:"title"`
-	AuthorID int64  `json:"author_id"`
+	Title    string `json:"title" validate:"required,max=200"`
+	AuthorID int64  `json:"author_id" validate:"required,gt=0"`
 }
 
 func toBookListSchema(m *models.Book) BookListSchema {
@@ -64,7 +68,7 @@ func toBookRetrieveSchema(m *models.Book) BookRetrieveSchema {
 
 // BookResource is the generated GORM-backed CRUD resource for
 // Book. Embeds goninja.BaseResource for a transaction-aware
-// DB(ctx).
+// DB(ctx) and a configurable ErrorMapper.
 type BookResource struct {
 	goninja.BaseResource
 }
@@ -108,6 +112,9 @@ func (r *BookResource) Retrieve(ctx context.Context, id int64) (*BookRetrieveSch
 }
 
 func (r *BookResource) Create(ctx context.Context, in BookCreateSchema) (*BookRetrieveSchema, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
 	m := models.Book{
 		Title:    in.Title,
 		AuthorID: in.AuthorID,
@@ -119,6 +126,9 @@ func (r *BookResource) Create(ctx context.Context, in BookCreateSchema) (*BookRe
 }
 
 func (r *BookResource) Update(ctx context.Context, id int64, in BookUpdateSchema) (*BookRetrieveSchema, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
 	var m models.Book
 	if err := r.DB(ctx).First(&m, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -148,67 +158,67 @@ func (r *BookResource) Delete(ctx context.Context, id int64) error {
 func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
 	items, err := r.List(req.Context())
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	goninja.RespondJSON(w, http.StatusOK, items)
 }
 
 func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
 func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
 	var in BookCreateSchema
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	out, err := r.Create(req.Context(), in)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, out)
+	goninja.RespondJSON(w, http.StatusCreated, out)
 }
 
 func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	var in BookUpdateSchema
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	out, err := r.Update(req.Context(), id, in)
 	if err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
 func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := idFromPath(req.URL.Path)
+	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
 	if err := r.Delete(req.Context(), id); err != nil {
-		mapError(w, err)
+		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

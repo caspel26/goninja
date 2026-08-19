@@ -34,6 +34,10 @@ type Field struct {
 	// Tags are the comma-separated values from the `goninja` struct tag,
 	// e.g. []string{"list", "retrieve"}.
 	Tags []string
+	// ValidateTag is the raw content of the field's `validate` struct tag
+	// (go-playground/validator syntax, e.g. "required,max=120"), empty if
+	// none was present. Only meaningful on Create/Update schema fields.
+	ValidateTag string
 }
 
 // HasTag reports whether the field is annotated with the given goninja tag.

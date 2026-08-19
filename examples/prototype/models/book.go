@@ -6,7 +6,7 @@ package models
 // lean by construction, per plan section 5.5.
 type Book struct {
 	ID       int64  `gorm:"primaryKey" json:"id" goninja:"list,retrieve"`
-	Title    string `json:"title" goninja:"list,retrieve,create,update"`
-	AuthorID int64  `json:"author_id" goninja:"list,retrieve,create,update"`
+	Title    string `json:"title" goninja:"list,retrieve,create,update" validate:"required,max=200"`
+	AuthorID int64  `json:"author_id" goninja:"list,retrieve,create,update" validate:"required,gt=0"`
 	Author   Author `json:"author" goninja:"retrieve"`
 }

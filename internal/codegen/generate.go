@@ -13,13 +13,13 @@ import (
 //go:embed templates/*.tmpl
 var templatesFS embed.FS
 
-var (
-	modelTmpl   = template.Must(template.ParseFS(templatesFS, "templates/model.go.tmpl"))
-	runtimeTmpl = template.Must(template.ParseFS(templatesFS, "templates/runtime.go.tmpl"))
-)
+var modelTmpl = template.Must(template.ParseFS(templatesFS, "templates/model.go.tmpl"))
 
-// Generate renders one <model>_generated.go file per model plus a shared
-// runtime_generated.go into outDir, all under the given package name.
+// Generate renders one <model>_generated.go file per model into outDir,
+// under the given package name. There's no shared runtime file: every
+// helper a generated file needs (JSON responses, error mapping,
+// validation) lives in the goninja package and is called directly, so
+// nothing needs deduplicating across models.
 // modelsImportPath/modelsPkg identify the package the models were parsed
 // from, so the generated code can import and reference them (e.g.
 // "github.com/caspel26/goninja/examples/prototype/models" / "models").
@@ -29,11 +29,6 @@ func Generate(models []Model, outDir, packageName, modelsImportPath, modelsPkg s
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("codegen: creating %s: %w", outDir, err)
-	}
-
-	if err := renderFile(runtimeTmpl, struct{ Package string }{packageName},
-		filepath.Join(outDir, "runtime_generated.go")); err != nil {
-		return err
 	}
 
 	for _, m := range models {

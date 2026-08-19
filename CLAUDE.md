@@ -11,19 +11,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `goninja` is a pre-alpha, code-first Go framework for generating complete
 CRUD REST APIs from annotated structs (routing, validation, serialization,
 OpenAPI, filters, pagination). The full design — public API shape, phased
-build plan, and rationale — lives in
-[goninja-implementation-plan.md](goninja-implementation-plan.md); read it
-before making architectural changes, since most decisions in this repo
-trace back to it.
+build plan, and rationale — lives in `goninja-implementation-plan.md`, a
+local working doc kept out of git (not on GitHub); read it before making
+architectural changes, since most decisions in this repo trace back to it.
 
-**Current phase: Phase 2 (GORM and queries)**, per section 6 of the plan.
-Phase 0's decision gate passed and Phase 1's exit criterion (engine
-generalizes to a second model) is met — both documented in the plan next
-to their phase sections. Phase 2's exit criterion (CRUD end-to-end on real
-Postgres, with automatic `Preload` on relation fields) is also met, proven
-by `examples/prototype`. Still not built: validation, a pluggable
-`ErrorMapper`, filters/pagination, OpenAPI, auth, hooks — those are
-Phases 3-6. Don't over-build beyond what the current phase calls for
+**Current phase: Phase 3 (schemas, validation, serialization)**, per
+section 6 of the plan. Phases 0-2 are done and documented in the plan next
+to their phase sections: the engine generalizes across models, and CRUD
+works end-to-end on real Postgres with automatic `Preload` on relation
+fields, proven by `examples/prototype`. Phase 3 added `validate`-tag-driven
+input validation (`goninja.Validate`, `go-playground/validator`) and a
+pluggable `goninja.ErrorMapper` (`NotFound`→404, `ValidationError`→422,
+`BadRequest`→400, else 500) replacing the old placeholder error mapping.
+Still not built: filters/pagination, OpenAPI, auth, hooks — those are
+Phases 4-6+. Don't over-build beyond what the current phase calls for
 without checking the plan.
 
 ## Commands
@@ -74,17 +75,22 @@ Three pieces:
    - [generate.go](internal/codegen/generate.go) +
      [templates/](internal/codegen/templates/): renders the IR through
      `text/template`, formats with `go/format`, and writes one
-     `<model>_generated.go` file per model plus a shared
-     `runtime_generated.go` (helpers like `writeJSON`/`idFromPath`/
-     `mapError` — kept in one shared file specifically to avoid
-     duplicate-symbol errors when multiple models are generated into the
-     same package).
+     `<model>_generated.go` file per model. No shared runtime file — every
+     helper a handler needs (`goninja.RespondJSON`, `goninja.Respond`,
+     `goninja.Validate`) lives in the root `goninja` package and is called
+     directly, so there's nothing to deduplicate across models.
 
-2. **root package `goninja`** (`resource.go`, `errors.go`) — the runtime
-   support generated code depends on: `BaseResource` (embedded by every
-   generated `<Model>Resource`), its transaction-aware `DB(ctx)`,
-   `InTransaction`/`WithTx`/`TxFromContext`, and the `NotFound` error
-   type. Generated code imports this package as
+2. **root package `goninja`** (`resource.go`, `errors.go`, `validate.go`,
+   `mapper.go`) — the runtime support generated code depends on:
+   `BaseResource` (embedded by every generated `<Model>Resource`), its
+   transaction-aware `DB(ctx)`, `InTransaction`/`WithTx`/`TxFromContext`;
+   the error types `NotFound`/`ValidationError`/`BadRequest`; `Validate`
+   (runs `go-playground/validator` against a Create/Update schema's
+   `validate` tags, returning `ValidationError` keyed by JSON field name);
+   and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+   section 5.11) — a resource's `SetErrorMapper` overrides how its
+   generated handlers turn an error into an HTTP response; unset falls
+   back to `DefaultErrorMapper`. Generated code imports this package as
    `github.com/caspel26/goninja`.
 
 3. **`cmd/goninja`** — the CLI (`goninja generate`), a thin flag-parsing
@@ -138,3 +144,8 @@ hand-editing anything under `examples/prototype/internal/api`.
   literally named `ID` of type `int64` — hardcoded in the templates
   (`Retrieve(ctx, id int64)` etc.), not yet derived from the model's
   actual primary-key field/type.
+- A model field's `validate:"..."` struct tag is copied verbatim onto the
+  matching `Create`/`Update` schema field (`ir.go`'s `Field.ValidateTag`);
+  `Create`/`Update` call `goninja.Validate` before touching the database.
+  `List`/`Retrieve` schema fields never carry it — validation only applies
+  to input.
