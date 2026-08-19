@@ -18,7 +18,7 @@ import (
 )
 
 func TestAuthorResource_CreateAndList(t *testing.T) {
-	db := goninjatest.NewDB(t, &models.Author{})
+	db := goninjatest.NewDB(t, &models.Author{}, &models.Book{})
 	srv := goninjatest.NewServer(t, api.NewAuthorResource(db))
 
 	body := `{"name":"Ursula K. Le Guin","bio":"American author."}`

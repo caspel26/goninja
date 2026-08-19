@@ -111,6 +111,54 @@ func TestGenerate_RelationByID(t *testing.T) {
 	}
 }
 
+// TestGenerate_HasManyRelation confirms a slice relation field (has-many/
+// reverse-FK, e.g. Author.Books []Book) nests as a slice of the related
+// model's Retrieve type — Preload, the Retrieve struct field type, its
+// conversion loop, and the OpenAPI schema all need to treat it as an array,
+// not a single nested object (Field.IsSlice, internal/codegen/ir.go).
+func TestGenerate_HasManyRelation(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Author",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Name", GoType: "string", JSONName: "name", Tags: []string{"list", "retrieve", "create"}},
+				{Name: "Books", GoType: "[]Book", JSONName: "books", Tags: []string{"retrieve"}},
+			},
+		},
+		{
+			Name: "Book",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "create"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(outDir, "author_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	for _, want := range []string{
+		`Books []BookRetrieve ` + "`json:\"books\"`",
+		`q.Preload("Books")`,
+		"make([]BookRetrieve, 0, len(m.Books))",
+		"toBookRetrieve(&m.Books[i])",
+		`{Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
 // TestGenerate_ActionsDispatch confirms Register and OpenAPI mount/document
 // every Action returned by r.Actions() (set via SetActions).
 func TestGenerate_ActionsDispatch(t *testing.T) {

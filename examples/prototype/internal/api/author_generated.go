@@ -32,9 +32,10 @@ type AuthorList struct {
 // "byid" (plan section 5.12) instead exposes only the related model's ID,
 // as "<field>_id" — no nesting, no Preload.
 type AuthorRetrieve struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Bio  string `json:"bio"`
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	Bio   string         `json:"bio"`
+	Books []BookRetrieve `json:"books"`
 }
 
 // AuthorCreate is the shape accepted by POST /authors.
@@ -104,6 +105,13 @@ func toAuthorRetrieve(m *models.Author) AuthorRetrieve {
 		ID:   m.ID,
 		Name: m.Name,
 		Bio:  m.Bio,
+		Books: func() []BookRetrieve {
+			out := make([]BookRetrieve, 0, len(m.Books))
+			for i := range m.Books {
+				out = append(out, toBookRetrieve(&m.Books[i]))
+			}
+			return out
+		}(),
 	}
 }
 
@@ -190,6 +198,7 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 // skips the Preload entirely.
 func (r *AuthorResource) Retrieve(ctx context.Context, id string) (*AuthorRetrieve, error) {
 	q := r.DB(ctx)
+	q = q.Preload("Books")
 
 	var m models.Author
 	if err := q.First(&m, authorIDQuery, id).Error; err != nil {
@@ -419,9 +428,10 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 		"AuthorRetrieve": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":   {Type: "string"},
-				"name": {Type: "string"},
-				"bio":  {Type: "string"},
+				"id":    {Type: "string"},
+				"name":  {Type: "string"},
+				"bio":   {Type: "string"},
+				"books": {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 			},
 		},
 		"AuthorCreate": {

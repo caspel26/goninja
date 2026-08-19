@@ -64,7 +64,7 @@ type {{.Model.Name}}List struct {
 // as "<field>_id" — no nesting, no Preload.
 type {{.Model.Name}}Retrieve struct {
 {{- range .Model.RetrieveFields}}
-	{{.Name}}{{if and .IsRelation .IsByID}}ID{{end}} {{if .IsRelation}}{{if .IsByID}}{{.RelatedIDGoType}}{{else}}{{.GoType}}Retrieve{{end}}{{else}}{{.GoType}}{{end}} `json:"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}"`
+	{{.Name}}{{if and .IsRelation .IsByID}}ID{{end}} {{if .IsRelation}}{{if .IsByID}}{{if .IsSlice}}[]{{end}}{{.RelatedIDGoType}}{{else}}{{if .IsSlice}}[]{{end}}{{.RelatedGoType}}Retrieve{{end}}{{else}}{{.GoType}}{{end}} `json:"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}"`
 {{- end}}
 }
 
@@ -145,9 +145,29 @@ func to{{.Model.Name}}Retrieve(m *{{$mt}}) {{.Model.Name}}Retrieve {
 {{- range .Model.RetrieveFields}}
 {{- if .IsRelation}}
 {{- if .IsByID}}
+{{- if .IsSlice}}
+		{{.Name}}ID: func() []{{.RelatedIDGoType}} {
+			out := make([]{{.RelatedIDGoType}}, 0, len(m.{{.Name}}))
+			for i := range m.{{.Name}} {
+				out = append(out, m.{{.Name}}[i].ID)
+			}
+			return out
+		}(),
+{{- else}}
 		{{.Name}}ID: m.{{.Name}}ID,
+{{- end}}
+{{- else}}
+{{- if .IsSlice}}
+		{{.Name}}: func() []{{.RelatedGoType}}Retrieve {
+			out := make([]{{.RelatedGoType}}Retrieve, 0, len(m.{{.Name}}))
+			for i := range m.{{.Name}} {
+				out = append(out, to{{.RelatedGoType}}Retrieve(&m.{{.Name}}[i]))
+			}
+			return out
+		}(),
 {{- else}}
 		{{.Name}}: to{{.GoType}}Retrieve(&m.{{.Name}}),
+{{- end}}
 {{- end}}
 {{- else}}
 		{{.Name}}: m.{{.Name}},
@@ -527,7 +547,7 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 			Type: "object",
 			Properties: map[string]openapi.Schema{
 			{{- range .Model.ListFields}}
-				"{{.JSONName}}": {{if .IsRelation}}{Ref: "#/components/schemas/{{.GoType}}Retrieve"}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
+				"{{.JSONName}}": {{if .IsRelation}}{{if .IsSlice}}{Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/{{.RelatedGoType}}Retrieve"}}{{else}}{Ref: "#/components/schemas/{{.RelatedGoType}}Retrieve"}{{end}}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
 			{{- end}}
 			},
 		},
@@ -535,7 +555,7 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 			Type: "object",
 			Properties: map[string]openapi.Schema{
 			{{- range .Model.RetrieveFields}}
-				"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}": {{if .IsRelation}}{{if .IsByID}}{Type: "{{.RelatedIDOpenAPIType}}"{{if .RelatedIDOpenAPIFormat}}, Format: "{{.RelatedIDOpenAPIFormat}}"{{end}}}{{else}}{Ref: "#/components/schemas/{{.GoType}}Retrieve"}{{end}}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
+				"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}": {{if .IsRelation}}{{if .IsByID}}{{if .IsSlice}}{Type: "array", Items: &openapi.Schema{Type: "{{.RelatedIDOpenAPIType}}"{{if .RelatedIDOpenAPIFormat}}, Format: "{{.RelatedIDOpenAPIFormat}}"{{end}}}}{{else}}{Type: "{{.RelatedIDOpenAPIType}}"{{if .RelatedIDOpenAPIFormat}}, Format: "{{.RelatedIDOpenAPIFormat}}"{{end}}}{{end}}{{else}}{{if .IsSlice}}{Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/{{.RelatedGoType}}Retrieve"}}{{else}}{Ref: "#/components/schemas/{{.RelatedGoType}}Retrieve"}{{end}}{{end}}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
 			{{- end}}
 			},
 		},
