@@ -48,18 +48,20 @@ can read, debug, and step through.
 `goninja` is early and not yet usable for real projects. The current
 engine lives under [`internal/codegen`](internal/codegen) and
 [`examples/prototype`](examples/prototype): it parses `goninja`-tagged
-struct fields and generates typed schemas, an in-memory store, and
-`net/http` handlers, end to end, for any number of models.
+struct fields and generates typed schemas plus GORM-backed CRUD (`net/http`
+handlers, transaction-aware queries, automatic preloading of relations on
+retrieve) for any number of models, verified end to end against Postgres.
 
-Try it:
+Try it (needs a running Postgres):
 
 ```console
+$ export PROTOTYPE_DSN="host=localhost user=$(whoami) dbname=goninja_prototype sslmode=disable"
 $ make generate-prototype   # writes examples/prototype/internal/api
-$ make run-prototype        # serves /tasks and /authors on :8080
+$ make run-prototype        # serves /tasks, /authors, /books on :8080
 ```
 
-Real database support, validation, OpenAPI, filters/pagination, auth, and
-hooks are designed but not yet built. Follow progress in
+Validation, OpenAPI, filters/pagination, auth, and hooks are designed but
+not yet built. Follow progress in
 [goninja-implementation-plan.md](goninja-implementation-plan.md).
 
 ## Contributing
