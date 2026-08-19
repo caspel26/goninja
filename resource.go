@@ -37,6 +37,7 @@ type BaseResource struct {
 	errorMapper      ErrorMapper
 	openAPITags      []string
 	excludedFromDocs bool
+	self             any
 }
 
 // SetDB injects the base database connection. Called by the generated
@@ -90,6 +91,26 @@ func (r *BaseResource) ExcludeFromDocs() {
 
 func (r *BaseResource) docsExcluded() bool {
 	return r.excludedFromDocs
+}
+
+// SetSelf tells a generated resource which concrete value the generated
+// handlers should dispatch through when checking for overridden methods
+// and optional hooks (BeforeCreateHook etc — see hooks.go). Go has no
+// dynamic dispatch through embedding: a type that embeds a generated
+// <Model>Resource and overrides one of its methods, or implements a hook
+// interface on itself, is invisible to code running on the embedded
+// receiver unless that receiver is told explicitly (plan section 5.10).
+// The generated New<Model>Resource constructor calls SetSelf(itself) by
+// default, so a resource used directly needs no extra step; a type
+// embedding it should call SetSelf again in its own constructor, pointing
+// it at itself, to make its overrides and hooks take effect.
+func (r *BaseResource) SetSelf(self any) {
+	r.self = self
+}
+
+// Self returns the value passed to SetSelf, or nil if it was never called.
+func (r *BaseResource) Self() any {
+	return r.self
 }
 
 // DB returns the connection to use for this context: the enclosing
