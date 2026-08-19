@@ -83,6 +83,24 @@ func (f Field) IsByID() bool {
 	return f.HasTag("byid")
 }
 
+// IsSlice reports whether a relation field is a has-many/reverse-FK
+// association, e.g. "[]Review" — as opposed to a belongs-to field, which is
+// a single value. Meaningless on a non-relation field. Only a plain slice
+// of the related struct is supported, not a slice of pointers, mirroring
+// how a belongs-to field is likewise assumed to be a plain struct value
+// rather than a pointer (see to<Model>Retrieve's own dereference in the
+// generated code).
+func (f Field) IsSlice() bool {
+	return strings.HasPrefix(f.GoType, "[]")
+}
+
+// RelatedGoType is a relation field's element type name, stripped of its
+// "[]" wrapper when IsSlice — e.g. "Review" for both "Review" and
+// "[]Review". Meaningless on a non-relation field.
+func (f Field) RelatedGoType() string {
+	return strings.TrimPrefix(f.GoType, "[]")
+}
+
 // RelatedIDOpenAPIType/RelatedIDOpenAPIFormat mirror OpenAPIType/
 // OpenAPIFormat, but for a byid relation field's synthesized "<field>_id"
 // property — typed after the related model's own ID (RelatedIDGoType,

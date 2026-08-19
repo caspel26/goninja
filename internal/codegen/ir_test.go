@@ -43,6 +43,39 @@ func TestField_IsByID(t *testing.T) {
 	}
 }
 
+func TestField_IsSlice(t *testing.T) {
+	cases := []struct {
+		goType string
+		want   bool
+	}{
+		{"string", false},
+		{"Author", false},
+		{"[]Author", true},
+	}
+	for _, c := range cases {
+		f := Field{GoType: c.goType}
+		if got := f.IsSlice(); got != c.want {
+			t.Errorf("IsSlice(%q) = %v, want %v", c.goType, got, c.want)
+		}
+	}
+}
+
+func TestField_RelatedGoType(t *testing.T) {
+	cases := []struct {
+		goType string
+		want   string
+	}{
+		{"Author", "Author"},
+		{"[]Author", "Author"},
+	}
+	for _, c := range cases {
+		f := Field{GoType: c.goType}
+		if got := f.RelatedGoType(); got != c.want {
+			t.Errorf("RelatedGoType(%q) = %q, want %q", c.goType, got, c.want)
+		}
+	}
+}
+
 func TestField_RelatedIDOpenAPITypeAndFormat(t *testing.T) {
 	f := Field{RelatedIDGoType: "int64"}
 	if got := f.RelatedIDOpenAPIType(); got != "integer" {
