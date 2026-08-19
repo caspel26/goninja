@@ -9,9 +9,9 @@ Define your model once, annotate its fields, and generate the rest.
 ```go
 // models/book.go
 type Book struct {
-    ID        int64     `gorm:"primaryKey" goninja:"list,retrieve"`
+    ID        string    `gorm:"primaryKey;type:uuid" goninja:"list,retrieve"`
     Title     string    `gorm:"size:120;not null" goninja:"list,retrieve,create,update" validate:"required,max=120"`
-    AuthorID  int64     `goninja:"list,retrieve,create,update,filter"`
+    AuthorID  string    `goninja:"list,retrieve,create,update,filter"`
     Price     float64   `goninja:"list,retrieve,create,update,filter" validate:"min=0"`
     Published bool      `goninja:"list,retrieve,create,update,filter"`
 }
@@ -48,10 +48,14 @@ can read, debug, and step through.
 `goninja` is early and not yet usable for real projects. The current
 engine lives under [`internal/codegen`](internal/codegen) and
 [`examples/prototype`](examples/prototype): it parses `goninja`-tagged
-struct fields and generates typed schemas plus GORM-backed CRUD (`net/http`
-handlers, transaction-aware queries, automatic preloading of relations on
-retrieve, `validate`-tag-driven input validation with per-field 422
-responses) for any number of models, verified end to end against Postgres.
+struct fields and generates typed output types plus GORM-backed CRUD
+(`net/http` handlers, transaction-aware queries, automatic preloading of
+relations on retrieve, `validate`-tag-driven input validation with
+per-field 422 responses, `filter`-tag-driven filtering with limit/offset
+pagination and ordering behind a `{items, total, limit, offset}` envelope)
+for any number of models, verified end to end against Postgres. A model's
+ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
+generates itself) — `examples/prototype`'s models use UUID IDs.
 
 Try it (needs a running Postgres):
 
@@ -59,10 +63,10 @@ Try it (needs a running Postgres):
 $ export PROTOTYPE_DSN="host=localhost user=$(whoami) dbname=goninja_prototype sslmode=disable"
 $ make generate-prototype   # writes examples/prototype/internal/api
 $ make run-prototype        # serves /tasks, /authors, /books on :8080
+$ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20"
 ```
 
-OpenAPI, filters/pagination, auth, and hooks are designed but not yet
-built.
+OpenAPI, auth, and hooks are designed but not yet built.
 
 ## Contributing
 
