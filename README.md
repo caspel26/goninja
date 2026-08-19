@@ -127,7 +127,9 @@ $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 
 Hooks, per-method overriding, custom path/route config, a global default
 auth policy + middleware, and a per-field choice between nesting a
-relation and exposing just its ID (all below) are built.
+relation and exposing just its ID (all below) are built. The root
+`goninja` package now has a test suite (`make cover` for coverage against
+its own + `internal/codegen`'s, enforced at 70% in CI).
 
 ### Generated docs UI
 
