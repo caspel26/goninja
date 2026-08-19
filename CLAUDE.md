@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Workflow rule
+
+**Never run `git commit` or `git push` without the user's explicit approval first** — ask before each one, even mid-task and even if earlier commits/pushes in the same session were approved. Staging changes (`git add`) and showing a diff/status is fine without asking.
+
 ## What this is
 
 `goninja` is a pre-alpha, code-first Go framework for generating complete
