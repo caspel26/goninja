@@ -2,8 +2,6 @@
   <img src="docs/logo/goninja-logo-full.png" alt="goninja" width="480">
 </p>
 
-# goninja
-
 Code-first Go framework for generating complete CRUD REST APIs from
 annotated structs: routing, input/output validation, serialization,
 OpenAPI, filters, pagination.
