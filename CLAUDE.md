@@ -33,9 +33,9 @@ build plan, and rationale — lives in `goninja-implementation-plan.md`, a
 local working doc kept out of git (not on GitHub); read it before making
 architectural changes, since most decisions in this repo trace back to it.
 
-**Current phase: Phase 6 (extension: embedding, hooks, config, auth)**,
-per section 6 of the plan. Phases 0-5 are done and documented in the plan
-next to their phase sections: the engine generalizes across models, CRUD
+**Current phase: Phase 7 (testing and testability)**, per section 6 of the
+plan ("Fase 7"). Phases 0-6 are done and documented in the plan next to
+their phase sections: the engine generalizes across models, CRUD
 works end-to-end on real Postgres with automatic `Preload` on relation
 fields, `validate`-tag-driven input validation, and a pluggable
 `goninja.ErrorMapper` (`NotFound`→404, `ValidationError`→422,
@@ -106,9 +106,25 @@ related model's own `IDGoType`, resolved across the full model list by
 codegen has no other visibility into its related model) instead of nesting
 the related model's full `Retrieve`, and skips that field's `Preload`
 entirely — no modifier keeps today's only prior behavior, unchanged. This
-closes out Phase 6; the plan has no Phase 7 work started yet (testing —
-see plan section 6). Don't over-build beyond what the current phase calls
-for without checking the plan.
+closed out Phase 6. Phase 7 (testing and testability) has so far added a
+test suite for the root `goninja` package — `*_test.go` alongside each
+root-package file, which had zero test files before this — using
+`github.com/glebarez/sqlite` (pure-Go, no cgo) as an in-memory test-only DB
+dependency for `resource.go`'s `DB(ctx)`/`InTransaction` coverage, plus
+`scripts/coverage.sh` (`go test . ./internal/codegen -coverprofile=...
+-covermode=atomic`, prints the total percentage, and takes an optional
+threshold argument that fails the run below it — wired into CI as a 70%
+gate) and `scripts/coverage_badge.sh` (regenerates the tracked
+`coverage-badge.json`, a shields.io "endpoint" badge the README points at —
+regenerated and committed by hand, not by CI, since `main` requires a PR
+and blocks direct pushes, so a CI bot commit would just fail against branch
+protection). `internal/codegen` already had a real test suite from earlier
+phases. Remaining Phase 7 items: `goninja.NewTestServer(resource)` for
+boilerplate-free end-to-end resource tests, and an in-memory SQLite
+test-DB helper for a user's own resource tests (distinct from the
+test-only sqlite dependency above, which only backs the framework's own
+tests). Don't over-build beyond what the current phase calls for without
+checking the plan.
 
 ## Commands
 
@@ -117,6 +133,8 @@ make build               # go build ./...
 make test                # go test ./...
 make vet                 # go vet ./...
 make fmt                 # gofmt -l . (lists unformatted files)
+make cover               # coverage for . + internal/codegen; make cover THRESHOLD=70 to fail below it (CI does this)
+make cover-badge         # regenerate coverage-badge.json (README badge) from the last `make cover` run
 make generate-prototype  # regenerate examples/prototype/internal/api from examples/prototype/models
 make run-prototype       # generate-prototype, then run the example server on :8080 (needs PROTOTYPE_DSN, see below)
 ```

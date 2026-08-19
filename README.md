@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/caspel26/goninja/actions/workflows/go.yml"><img src="https://github.com/caspel26/goninja/actions/workflows/go.yml/badge.svg" alt="Build Status"></a>
+  <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/caspel26/goninja/main/coverage-badge.json" alt="Coverage">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/caspel26/goninja" alt="License"></a>
   <img src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white" alt="Go version">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
@@ -126,7 +127,9 @@ $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 
 Hooks, per-method overriding, custom path/route config, a global default
 auth policy + middleware, and a per-field choice between nesting a
-relation and exposing just its ID (all below) are built.
+relation and exposing just its ID (all below) are built. The root
+`goninja` package now has a test suite (`make cover` for coverage against
+its own + `internal/codegen`'s, enforced at 70% in CI).
 
 ### Generated docs UI
 
