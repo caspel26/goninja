@@ -97,9 +97,18 @@ are the minimal contract between an auth middleware and a resource:
 middleware stores an authenticated `User` (a one-method interface, `ID()
 string`) on the context via `WithUser`, a resource reads it back via
 `UserFromContext` — typically inside the `Config.DefaultAuth.Middleware`
-chain itself. Still not built: relations nested-vs-by-id (plan §5.12), the
-last remaining Phase 6 item. Don't over-build beyond what the current
-phase calls for without checking the plan.
+chain itself. Phase 6's last item, relations nested-vs-by-id (plan §5.12),
+is also done: a relation field's `goninja` tag takes an additional `byid`
+modifier (e.g. `goninja:"retrieve,byid"`) — `Field.IsByID` in `ir.go` —
+that makes its `Retrieve` schema expose only `<field>_id` (typed after the
+related model's own `IDGoType`, resolved across the full model list by
+`Generate`'s `resolveByIDFields` in `generate.go` since a single model's
+codegen has no other visibility into its related model) instead of nesting
+the related model's full `Retrieve`, and skips that field's `Preload`
+entirely — no modifier keeps today's only prior behavior, unchanged. This
+closes out Phase 6; the plan has no Phase 7 work started yet (testing —
+see plan section 6). Don't over-build beyond what the current phase calls
+for without checking the plan.
 
 ## Commands
 
@@ -214,8 +223,9 @@ hand-editing anything under `examples/prototype/internal/api`.
 ### Key generator conventions
 
 - Tag vocabulary is the field-level `goninja:"..."` struct tag (comma-
-  separated verbs: `list`, `retrieve`, `create`, `update`, `filter`);
-  `Field.HasTag` in `ir.go` is the single place that interprets it.
+  separated verbs: `list`, `retrieve`, `create`, `update`, `filter`, plus
+  the relation-only modifier `byid`); `Field.HasTag` in `ir.go` is the
+  single place that interprets it.
 - `list` and `retrieve` are separate output types by design (plan section
   5.1/5.5) — list stays lean and never preloads relations; retrieve is the
   full detail view and preloads every relation field it carries. This is
@@ -230,6 +240,18 @@ hand-editing anything under `examples/prototype/internal/api`.
 - `Field.IsRelation` (in `ir.go`) currently assumes single-value (not
   slice/has-many) relations for schema nesting — a slice relation field
   would generate but its schema conversion wouldn't be correct yet.
+- A relation field's `goninja` tag can carry a `byid` modifier (e.g.
+  `goninja:"retrieve,byid"`, `Field.IsByID` in `ir.go`, plan section 5.12)
+  to expose only the related model's ID instead of nesting its full
+  `Retrieve` — the generated field becomes `<Field>ID` on
+  `<Model>Retrieve`, JSON `<field>_id`, typed after the related model's own
+  `IDGoType`, and `Retrieve`'s query skips that field's `Preload` entirely.
+  Since a single model's codegen has no visibility into another model's IR
+  on its own, `Generate`'s `resolveByIDFields` (`generate.go`) resolves
+  every byid field's related ID type across the full model list *before*
+  rendering, filling in `Field.RelatedIDGoType` (falling back to `"string"`
+  if the related model isn't in the same generation run). No modifier
+  keeps the only prior behavior — full nesting, full `Preload` — unchanged.
 - The generated package imports the models package by import path
   (`-models-import`), so generated code and model structs stay in
   separate packages (`ModelsImport`/`ModelsPkg` in `generate.go`).

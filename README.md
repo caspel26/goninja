@@ -124,10 +124,9 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-Hooks, per-method overriding, custom path/route config, and a global
-default auth policy + middleware (below) are built — the last remaining
-piece is a per-field choice between nesting a relation and exposing just
-its ID.
+Hooks, per-method overriding, custom path/route config, a global default
+auth policy + middleware, and a per-field choice between nesting a
+relation and exposing just its ID (all below) are built.
 
 ### Generated docs UI
 
@@ -286,6 +285,29 @@ being just `ID() string`; goninja never constructs one itself.
 Plain `Mount` still works exactly as before — a resource it mounts gets a
 zero `Config`, so nothing is protected and no middleware runs, unless you
 switch that resource to `MountWithConfig`.
+
+### Relations: nested or by ID
+
+A relation field is nested as the related model's own `Retrieve` type by
+default — the full object, `Preload`ed automatically:
+
+```go
+type Book struct {
+    ID       string `gorm:"primaryKey;type:uuid" goninja:"list,retrieve"`
+    AuthorID string `goninja:"list,retrieve,create,update,filter"`
+    Author   Author `goninja:"retrieve"` // nested as {"author": {...full Author Retrieve...}}
+}
+```
+
+Add `byid` to skip that — the field exposes only the related ID instead,
+and its `Preload` never runs:
+
+```go
+Author Author `goninja:"retrieve,byid"` // {"author_id": "..."} — no nesting, no preload
+```
+
+Useful when a caller only ever needs the reference, not the full related
+object, and the extra join/preload would be wasted work.
 
 ## Contributing
 
