@@ -25,10 +25,12 @@ type TaskList struct {
 }
 
 // TaskRetrieve is the shape returned by GET /tasks/{id}.
-// A relation field (e.g. Author) is nested as that model's own
-// Retrieve type, never the raw related struct — output types are
-// always separate from the model, so a sensitive field can't leak into a
-// response just because it exists on the related struct either.
+// A relation field (e.g. Author) is nested as that model's own Retrieve
+// type, never the raw related struct — output types are always separate
+// from the model, so a sensitive field can't leak into a response just
+// because it exists on the related struct either. A relation field tagged
+// "byid" (plan section 5.12) instead exposes only the related model's ID,
+// as "<field>_id" — no nesting, no Preload.
 type TaskRetrieve struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -170,7 +172,9 @@ func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int
 }
 
 // Retrieve preloads every relation field carried on the retrieve type —
-// list never does, by construction (see List above).
+// list never does, by construction (see List above) — except one tagged
+// "byid" (plan section 5.12), which exposes only the related ID and so
+// skips the Preload entirely.
 func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, error) {
 	q := r.DB(ctx)
 
