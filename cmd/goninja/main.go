@@ -40,8 +40,8 @@ func run(args []string) error {
 func runGenerate(args []string) error {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	modelsDir := fs.String("models", "./models", "directory containing goninja-annotated model structs")
-	outDir := fs.String("out", "./internal/generated", "output directory for generated code")
-	pkg := fs.String("package", "generated", "package name for generated code")
+	outDir := fs.String("out", "./internal/api", "output directory for generated code")
+	pkg := fs.String("package", "api", "package name for generated code")
 	modelsImport := fs.String("models-import", "", "import path of the models package (required)")
 	modelsPkg := fs.String("models-pkg", "models", "package name of the models package, as used in Go source")
 	if err := fs.Parse(args); err != nil {
@@ -72,8 +72,8 @@ commands:
 
 flags for generate:
   -models string         directory containing model structs (default "./models")
-  -out string            output directory for generated code (default "./internal/generated")
-  -package string        package name for generated code (default "generated")
+  -out string            output directory for generated code (default "./internal/api")
+  -package string        package name for generated code (default "api")
   -models-import string  import path of the models package (required)
   -models-pkg string     package name of the models package (default "models")`)
 }

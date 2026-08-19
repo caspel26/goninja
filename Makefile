@@ -15,8 +15,8 @@ fmt:
 generate-prototype:
 	go run ./cmd/goninja generate \
 		-models ./examples/prototype/models \
-		-out ./examples/prototype/internal/generated \
-		-package generated \
+		-out ./examples/prototype/internal/api \
+		-package api \
 		-models-import github.com/caspel26/goninja/examples/prototype/models
 
 run-prototype: generate-prototype
