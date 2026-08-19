@@ -40,6 +40,7 @@ type BaseResource struct {
 	excludedFromDocs bool
 	self             any
 	config           Config
+	actions          []Action
 }
 
 // SetDB injects the base database connection. Called by the generated
@@ -129,6 +130,23 @@ func (r *BaseResource) SetConfig(cfg Config) {
 // Config returns the resource's configured Config, set via SetConfig.
 func (r *BaseResource) Config() Config {
 	return r.config
+}
+
+// SetActions declares custom endpoints beyond the generated CRUD set — see
+// Action. The generated Register(mux) mounts each one automatically
+// (wrapped through Protect, same as the CRUD routes) and OpenAPI()
+// documents every Action with a Summary set. No wrapper type or SetSelf
+// needed just for this: unlike hooks/Configurer, an Action carries its own
+// http.HandlerFunc, so there's no per-request dispatch to resolve — a
+// resource used directly can call SetActions right after construction.
+func (r *BaseResource) SetActions(actions ...Action) {
+	r.actions = actions
+}
+
+// Actions returns the resource's declared Actions, set via SetActions, or
+// nil if none were declared.
+func (r *BaseResource) Actions() []Action {
+	return r.actions
 }
 
 // Protect wraps h according to this resource's global Config

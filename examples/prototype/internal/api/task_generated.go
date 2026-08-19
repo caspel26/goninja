@@ -548,6 +548,38 @@ func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 		paths[itemPath] = itemPathItem
 	}
 
+	for _, a := range r.Actions() {
+		if a.Summary == "" {
+			continue
+		}
+		p := basePath
+		if a.Detail {
+			p += "/{id}"
+		}
+		if a.UrlPath != "" {
+			p += "/" + a.UrlPath
+		}
+		item, ok := paths[p]
+		if !ok {
+			item = &openapi.PathItem{}
+			paths[p] = item
+		}
+		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses}
+		if a.Detail {
+			op.Parameters = []openapi.Parameter{idParam}
+		}
+		switch a.Method {
+		case http.MethodGet:
+			item.Get = op
+		case http.MethodPost:
+			item.Post = op
+		case http.MethodPut:
+			item.Put = op
+		case http.MethodDelete:
+			item.Delete = op
+		}
+	}
+
 	return paths, schemas
 }
 
@@ -569,7 +601,8 @@ func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
 // resource's Config (global default auth + generic middleware, set via
 // API.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
 // resource mounted via plain API.Mount has a zero Config, so Protect is a
-// no-op there.
+// no-op there. Every Action declared via SetActions is mounted last, on the
+// same mux, at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
 func (r *TaskResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/tasks")
@@ -587,5 +620,15 @@ func (r *TaskResource) Register(mux *http.ServeMux) {
 	}
 	if cfg.RouteEnabled("delete") {
 		mux.HandleFunc("DELETE "+path+"/{id}", r.Protect("delete", cfg, r.deleteHandler))
+	}
+	for _, a := range r.Actions() {
+		p := path
+		if a.Detail {
+			p += "/{id}"
+		}
+		if a.UrlPath != "" {
+			p += "/" + a.UrlPath
+		}
+		mux.HandleFunc(a.Method+" "+p, r.Protect(a.Name, cfg, a.Handler))
 	}
 }

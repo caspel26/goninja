@@ -251,6 +251,20 @@ func TestBaseResource_Config(t *testing.T) {
 	}
 }
 
+func TestBaseResource_Actions(t *testing.T) {
+	var r BaseResource
+	if got := r.Actions(); got != nil {
+		t.Errorf("Actions() before SetActions = %v, want nil", got)
+	}
+
+	a := Action{Name: "publish", Method: "POST", UrlPath: "publish"}
+	r.SetActions(a)
+	got := r.Actions()
+	if len(got) != 1 || got[0].Name != "publish" {
+		t.Errorf("Actions() after SetActions = %+v, want [%+v]", got, a)
+	}
+}
+
 func TestBaseResource_Protect_ZeroConfigIsNoOp(t *testing.T) {
 	var r BaseResource // never SetConfig — plain Mount path
 	var ran bool

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 )
 
 // TestGenerate_TwoModels is the Phase 1 exit criterion from
@@ -110,9 +111,116 @@ func TestGenerate_RelationByID(t *testing.T) {
 	}
 }
 
+// TestGenerate_ActionsDispatch confirms Register and OpenAPI mount/document
+// every Action returned by r.Actions() (set via SetActions).
+func TestGenerate_ActionsDispatch(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Book",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "create"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(outDir, "book_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	for _, want := range []string{
+		"for _, a := range r.Actions() {",
+		"r.Protect(a.Name, cfg, a.Handler)",
+		"a.Summary",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestGenerate_NoModels(t *testing.T) {
 	if err := Generate(nil, t.TempDir(), "api", "example.com/app/models", "models"); err == nil {
 		t.Fatal("expected error for empty model list, got nil")
+	}
+}
+
+func TestGenerate_PropagatesRenderFileError(t *testing.T) {
+	// A model name that isn't a valid Go identifier produces invalid Go
+	// source once substituted into the template, so renderFile's
+	// go/format.Source step fails and Generate must propagate that error.
+	models := []Model{
+		{
+			Name: "task-thing",
+			Fields: []Field{
+				{Name: "ID", GoType: "int64", JSONName: "id", Tags: []string{"list", "retrieve"}},
+			},
+		},
+	}
+
+	if err := Generate(models, t.TempDir(), "api", "example.com/app/models", "models"); err == nil {
+		t.Fatal("Generate: err = nil, want the underlying renderFile error to propagate")
+	}
+}
+
+func TestGenerate_OutDirCannotBeCreated(t *testing.T) {
+	// outDir is nested under a path component that's actually a file, so
+	// MkdirAll fails.
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models := []Model{{Name: "Task", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}}}
+	err := Generate(models, filepath.Join(blocker, "out"), "api", "example.com/app/models", "models")
+	if err == nil {
+		t.Fatal("Generate: err = nil, want an error when outDir can't be created")
+	}
+}
+
+func TestRelatedIDGoType_NoMatchDefaultsToString(t *testing.T) {
+	models := []Model{{Name: "Author", Fields: []Field{{Name: "ID", GoType: "int64"}}}}
+	if got := relatedIDGoType(models, "Unknown"); got != "string" {
+		t.Errorf("relatedIDGoType(unmatched) = %q, want string", got)
+	}
+	if got := relatedIDGoType(models, "[]Author"); got != "int64" {
+		t.Errorf("relatedIDGoType([]Author) = %q, want int64", got)
+	}
+	if got := relatedIDGoType(models, "*Author"); got != "int64" {
+		t.Errorf("relatedIDGoType(*Author) = %q, want int64", got)
+	}
+}
+
+func TestRenderFile_TemplateExecuteError(t *testing.T) {
+	tmpl := template.Must(template.New("bad").Parse(`{{.Missing.Field}}`))
+	err := renderFile(tmpl, struct{}{}, filepath.Join(t.TempDir(), "out.go"))
+	if err == nil {
+		t.Fatal("renderFile: err = nil, want a template execution error")
+	}
+}
+
+func TestRenderFile_InvalidGoSource(t *testing.T) {
+	tmpl := template.Must(template.New("invalid").Parse(`this is not go source {{.}}`))
+	err := renderFile(tmpl, "x", filepath.Join(t.TempDir(), "out.go"))
+	if err == nil {
+		t.Fatal("renderFile: err = nil, want a go/format error for invalid source")
+	}
+}
+
+func TestRenderFile_WriteError(t *testing.T) {
+	tmpl := template.Must(template.New("ok").Parse(`package x`))
+	// Path inside a directory that doesn't exist -> os.WriteFile fails.
+	err := renderFile(tmpl, nil, filepath.Join(t.TempDir(), "missing-dir", "out.go"))
+	if err == nil {
+		t.Fatal("renderFile: err = nil, want a write error for a missing directory")
 	}
 }
 

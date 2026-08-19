@@ -463,3 +463,53 @@ hand-editing anything under `examples/prototype/internal/api`.
   `Config.Middleware` (logging/CORS-style) unconditionally. A resource
   mounted via plain `API.Mount` has a zero `Config`, so `Protect` is a
   no-op — no behavior change for callers that don't opt in.
+
+**Ad hoc feature addition (2026-08-19, same day as the subpackage split
+above): `goninja.Action` + `BaseResource.SetActions`** — a declarative way
+to add non-CRUD endpoints to a resource, requested by the user to mirror
+the `@action` decorator from their other project,
+[django-ninja-aio-crud](https://github.com/caspel26/django-ninja-aio-crud)
+(`detail`/collection routing, method, url path, auth, OpenAPI docs), but
+translated into an idiomatic Go equivalent with no reflection or
+decorators, consistent with the "nothing reflected at runtime" principle
+stated in the README. `actions.go` (root package) defines `Action` — a
+plain struct: `Name` (also the route-name key `ResourceConfig.Auth`'s
+`AlsoProtect`/`Public` and `Protect` target, same as `"list"`/`"create"`/
+etc.), `Detail` (mount under `<base>/{id}/<UrlPath>` instead of
+`<base>/<UrlPath>`), `Method`, `UrlPath`, `Handler`, and optionally
+`Summary`/`Responses` to document it. `BaseResource.SetActions(actions
+...Action)`/`Actions() []Action` (`resource.go`) store them directly on the
+resource — deliberately *not* dispatched through `SetSelf`/`Self()` the way
+hooks/`Configurer` are: an `Action` already carries its own
+`http.HandlerFunc`, so there's no per-request method resolution to do, and
+requiring a wrapper type + `SetSelf` just to attach static route data would
+duplicate the generated `New<Model>Resource` constructor for no benefit (an
+earlier revision this same day did exactly that — a `goninja.Actions`
+interface dispatched via `Self()`, requiring a hand-written wrapper struct
+mirroring the generated resource — the user flagged it as duplication and
+it was replaced with the plain setter). `model.go.tmpl`'s generated
+`Register(mux)` and `OpenAPI()` both range over `r.Actions()` unconditionally
+(nil slice when unset, so nothing to do): `Register` mounts each `Action`
+after the CRUD routes, wrapped through `r.Protect(a.Name, cfg, a.Handler)`
+exactly like a CRUD route; `OpenAPI()` adds a path entry for each `Action`
+with a non-empty `Summary`, tagged the same as the resource's other
+operations. No wrapper type, `SetSelf`, or `Register`/`OpenAPI` override is
+needed — a resource used directly can call `SetActions` right after
+construction. `examples/prototype/bookpublish.go` (`package main`, same as
+the rest of the example) splits this into `bookActions(r *api.BookResource)
+[]goninja.Action` and `publishBookHandler(r *api.BookResource)
+http.HandlerFunc` — handler logic lives beside the model it operates on,
+while `main.go` wires it explicitly (`bookAPI := api.NewBookResource(db);
+bookAPI.SetActions(bookActions(bookAPI)...)`) right next to `app.Mount(...)`,
+rather than hiding it behind a custom constructor — a first revision this
+same day used a `newBookResourceWithPublish(db)` constructor that baked the
+`SetActions` call in, but the user pushed back that `main.go` couldn't show
+what was actually mounted without opening `bookpublish.go`, so the explicit
+two-line wiring replaced it. README's "Adding custom routes beyond CRUD"
+mirrors the same split into a `handlers/book.go` file (`BookActions`/
+`publishHandler`) plus an explicit `main.go` wiring snippet. One template
+design note: the path-building logic (`base + "/{id}" + "/" + UrlPath`) is
+inlined separately in both `Register` and `OpenAPI()` rather than factored
+into a shared helper function, since a package-level function would be
+generated once per model file and collide when multiple models share an
+output package (as `examples/prototype` does).
