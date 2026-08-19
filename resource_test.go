@@ -201,6 +201,56 @@ func TestBaseResource_Protect(t *testing.T) {
 	})
 }
 
+func TestBaseResource_ErrorMapper_DefaultsWhenUnset(t *testing.T) {
+	var r BaseResource
+	if _, ok := r.ErrorMapper().(DefaultErrorMapper); !ok {
+		t.Errorf("ErrorMapper() before SetErrorMapper = %T, want DefaultErrorMapper", r.ErrorMapper())
+	}
+
+	m := DefaultErrorMapper{}
+	r.SetErrorMapper(m)
+	if r.ErrorMapper() != ErrorMapper(m) {
+		t.Error("ErrorMapper() after SetErrorMapper did not return the value passed in")
+	}
+}
+
+func TestBaseResource_OpenAPITags(t *testing.T) {
+	var r BaseResource
+	if r.OpenAPITags() != nil {
+		t.Errorf("OpenAPITags() before SetOpenAPITags = %v, want nil", r.OpenAPITags())
+	}
+
+	r.SetOpenAPITags("Books", "Catalog")
+	got := r.OpenAPITags()
+	if len(got) != 2 || got[0] != "Books" || got[1] != "Catalog" {
+		t.Errorf("OpenAPITags() = %v, want [Books Catalog]", got)
+	}
+}
+
+func TestBaseResource_ExcludeFromDocs_DocsExcluded(t *testing.T) {
+	var r BaseResource
+	if r.DocsExcluded() {
+		t.Error("DocsExcluded() before ExcludeFromDocs = true, want false")
+	}
+	r.ExcludeFromDocs()
+	if !r.DocsExcluded() {
+		t.Error("DocsExcluded() after ExcludeFromDocs = false, want true")
+	}
+}
+
+func TestBaseResource_Config(t *testing.T) {
+	var r BaseResource
+	if r.Config().DefaultAuth.Protected != nil {
+		t.Error("Config() before SetConfig is not the zero value")
+	}
+
+	cfg := Config{DefaultAuth: AuthPolicy{Protected: []string{"create"}}}
+	r.SetConfig(cfg)
+	if len(r.Config().DefaultAuth.Protected) != 1 || r.Config().DefaultAuth.Protected[0] != "create" {
+		t.Errorf("Config() after SetConfig = %+v, want %+v", r.Config(), cfg)
+	}
+}
+
 func TestBaseResource_Protect_ZeroConfigIsNoOp(t *testing.T) {
 	var r BaseResource // never SetConfig — plain Mount path
 	var ran bool
