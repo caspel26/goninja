@@ -152,32 +152,39 @@ $ curl -s -X POST localhost:8080/books -d '{"author_id":"76f431cf-...","price":5
 
 ### Generated docs UI
 
-`/docs` renders the merged OpenAPI document with either UI, both fully
-embedded (no external CDN):
+One call — `goninja.MountDocs(mux, doc, "/docs", ui)` — serves the merged
+OpenAPI document as JSON plus a rendered UI, both fully embedded (no
+external CDN). `ui` is an interface, not a hardcoded renderer, so swapping
+one line swaps the whole UI:
 
 <table>
 <tr>
-<td width="50%">
+<td width="50%" align="center">
 
-**Swagger UI** (`goninja.SwaggerUI()`, the default)
+**Swagger UI**<br><sub>`goninja.SwaggerUI()` — the default</sub>
 
-<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model">
+<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model" width="100%">
 
 </td>
-<td width="50%">
+<td width="50%" align="center">
 
-**ReDoc** (`goninja.ReDoc()`, a drop-in swap)
+**ReDoc**<br><sub>`goninja.ReDoc()` — a drop-in swap</sub>
 
-<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples">
+<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples" width="100%">
 
 </td>
 </tr>
 </table>
 
-Every operation is expandable into its request/response schema, complete
-with example values generated from the model's fields:
+Every operation expands into its request/response schema, complete with
+example values generated straight from the model's fields — no hand-written
+OpenAPI, ever:
 
+<p align="center">
 <img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books operation with its request body schema and response example" width="720">
+<br>
+<sub>An expanded <code>POST /books</code> operation in Swagger UI</sub>
+</p>
 
 ### Extending a resource: hooks and overrides
 
