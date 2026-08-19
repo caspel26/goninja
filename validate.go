@@ -25,6 +25,15 @@ func newValidator() *validator.Validate {
 	return v
 }
 
+// RegisterValidation adds a custom `validate:"..."` tag function, forwarding
+// to the shared validatorInstance's own RegisterValidation — the mechanism
+// go-playground/validator itself exposes for this. Call it once at startup
+// (e.g. in main, before serving traffic) so every generated Create/Update
+// schema's Validate call can use the new tag.
+func RegisterValidation(tag string, fn validator.Func) error {
+	return validatorInstance.RegisterValidation(tag, fn)
+}
+
 // Validate runs go-playground/validator's struct validation (driven by the
 // `validate` struct tags on a generated Create/Update schema) and, on
 // failure, returns a ValidationError keyed by JSON field name rather than

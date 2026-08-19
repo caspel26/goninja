@@ -233,6 +233,28 @@ ones you need. The same `SetSelf` wiring also makes an overridden
 `Retrieve`/`List`/`Update`/`Delete` method take effect, e.g. to add
 caching in front of the generated query without forking it.
 
+### Custom validation tags
+
+`Create`/`Update` validation runs against `go-playground/validator`'s
+built-in tags (`required`, `max`, `email`, ...) out of the box. Register
+your own with `goninja.RegisterValidation` — a thin forward to the
+library's own mechanism, called once at startup before serving traffic:
+
+```go
+goninja.RegisterValidation("isbn", func(fl validator.FieldLevel) bool {
+    return isValidISBN(fl.Field().String()) // yours
+})
+```
+
+```go
+type Book struct {
+    ISBN string `goninja:"create,update" validate:"required,isbn"`
+}
+```
+
+Every generated `Create`/`Update`'s `Validate` call picks it up immediately
+— there's nothing to wire per resource.
+
 ### Custom path and restricted routes
 
 The same `SetSelf` wrapper can implement `goninja.Configurer` to override the
