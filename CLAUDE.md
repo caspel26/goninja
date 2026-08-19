@@ -6,6 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Never run `git commit` or `git push` without the user's explicit approval first** — ask before each one, even mid-task and even if earlier commits/pushes in the same session were approved. Staging changes (`git add`) and showing a diff/status is fine without asking.
 
+**`main` requires a PR to merge** (GitHub branch protection: PRs required,
+force-push and branch deletion blocked). The flow is: branch, commit,
+push the branch, `gh pr create`, then ask before merging — don't assume
+approval to push a branch extends to merging it. Before any push to
+`main` (direct or via force, which should be rare and only with explicit
+approval), fetch `origin/main` first — a stale local `main` reused from
+earlier in the session can silently clobber a commit merged elsewhere in
+the meantime.
+
+Local `user.name`/`user.email` are already set correctly on this repo
+(`caspel26` / `giuseppework26@gmail.com`, verified under the `caspel26`
+GitHub account) — plain `git commit` picks them up; no need for inline
+`-c user.name=`/`-c user.email=` flags.
+
+See `HANDOFF.md` (local, gitignored) for session-to-session working notes
+that don't belong in this file — current phase status, in-flight
+decisions, gotchas from past sessions.
+
 ## What this is
 
 `goninja` is a pre-alpha, code-first Go framework for generating complete
