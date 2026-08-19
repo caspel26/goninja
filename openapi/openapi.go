@@ -58,12 +58,19 @@ type Response struct {
 // a rendered UI (Swagger UI's sidebar, ReDoc's nav, etc) — every operation
 // generated for a resource carries the same Tags, set via
 // BaseResource.SetOpenAPITags and defaulting to the model name.
+// Operation.Security is a list of alternative requirements — satisfying
+// any one entry is enough, matching how goninja tries a route's configured
+// Authenticators in order until one succeeds (see BaseResource.SecurityFor,
+// resource.go). Each entry's map key is a SecurityScheme name (Authenticator
+// name, resolved into Components.SecuritySchemes); the []string scope list
+// is always empty for the http/apiKey schemes goninja generates.
 type Operation struct {
-	Summary     string              `json:"summary,omitempty"`
-	Tags        []string            `json:"tags,omitempty"`
-	Parameters  []Parameter         `json:"parameters,omitempty"`
-	RequestBody *RequestBody        `json:"requestBody,omitempty"`
-	Responses   map[string]Response `json:"responses"`
+	Summary     string                `json:"summary,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
+	Parameters  []Parameter           `json:"parameters,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]Response   `json:"responses"`
+	Security    []map[string][]string `json:"security,omitempty"`
 }
 
 // PathItem is the set of operations mounted on one URL path.
@@ -80,10 +87,29 @@ type Info struct {
 	Version string `json:"version"`
 }
 
+// SecurityScheme describes one way a request can authenticate, keyed by
+// name in Components.SecuritySchemes and referenced from an Operation's
+// Security by that same name. goninja.Authenticator.SecurityScheme (root
+// package) is the only place one of these gets built — the object that
+// enforces auth at runtime is also the sole source of truth for how it's
+// documented, so the two can't drift apart.
+type SecurityScheme struct {
+	// Type is the OpenAPI scheme type: "http" or "apiKey".
+	Type string `json:"type"`
+	// Scheme is set for Type "http", e.g. "bearer".
+	Scheme string `json:"scheme,omitempty"`
+	// In and Name are set for Type "apiKey": where the key travels
+	// ("header", "query", "cookie") and under what name.
+	In   string `json:"in,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
 // Components holds the document's reusable schema definitions, referenced
-// from operations via Schema.Ref ("#/components/schemas/<name>").
+// from operations via Schema.Ref ("#/components/schemas/<name>"), plus its
+// named SecuritySchemes, referenced from an Operation's Security.
 type Components struct {
-	Schemas map[string]Schema `json:"schemas,omitempty"`
+	Schemas         map[string]Schema         `json:"schemas,omitempty"`
+	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty"`
 }
 
 // Spec is a full OpenAPI 3.0 document, as returned by API.Spec and
@@ -96,8 +122,9 @@ type Spec struct {
 }
 
 // OpenAPIProvider is implemented by every generated <Model>Resource: it
-// returns the fragment of the document — the paths it mounts and the
-// schemas those paths reference. goninja.API.Add merges the fragment in.
+// returns the fragment of the document — the paths it mounts, the schemas
+// those paths reference, and the security schemes referenced by any
+// protected path's Security. goninja.API.Add merges the fragment in.
 type OpenAPIProvider interface {
-	OpenAPI() (paths map[string]*PathItem, schemas map[string]Schema)
+	OpenAPI() (paths map[string]*PathItem, schemas map[string]Schema, securitySchemes map[string]SecurityScheme)
 }

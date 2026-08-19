@@ -33,6 +33,33 @@ func TestNewDB_NoModelsStillReturnsUsableDB(t *testing.T) {
 	}
 }
 
+type unmigratableModel struct {
+	ID int64
+	Ch chan int
+}
+
+func TestNewDB_AutoMigrateFailureFailsTheTest(t *testing.T) {
+	spy := &fatalSpyTB{TB: t}
+
+	goninjatest.NewDB(spy, &unmigratableModel{})
+
+	if !spy.fataled {
+		t.Fatal("NewDB did not fail the test when AutoMigrate returned an error")
+	}
+}
+
+// fatalSpyTB wraps a *testing.T so a nested testing.TB argument's Fatalf
+// can be observed without actually aborting the outer test.
+type fatalSpyTB struct {
+	testing.TB
+	fataled bool
+}
+
+func (s *fatalSpyTB) Fatalf(format string, args ...any) {
+	s.fataled = true
+	s.Logf(format, args...)
+}
+
 func TestNewDB_TwoCallsAreIndependent(t *testing.T) {
 	a := goninjatest.NewDB(t, &dbTestRow{})
 	b := goninjatest.NewDB(t, &dbTestRow{})

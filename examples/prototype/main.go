@@ -53,11 +53,27 @@ func main() {
 	bookAPI := api.NewBookResource(db)
 	bookAPI.SetActions(bookActions(bookAPI)...) // adds POST /books/{id}/publish; see bookpublish.go
 
-	app.Mount(mux,
+	resources := []goninja.Resource{
 		api.NewTaskResource(db),
 		api.NewAuthorResource(db),
 		bookAPI,
-	)
+	}
+
+	// PROTOTYPE_API_KEY is optional — set it to see goninja.Authenticator
+	// protect create/update/delete end to end (see auth.go); unset, the
+	// prototype stays fully public for frictionless local exploration.
+	if apiKey := os.Getenv("PROTOTYPE_API_KEY"); apiKey != "" {
+		cfg := goninja.Config{
+			DefaultAuth: goninja.AuthPolicy{
+				Routes: []goninja.Route{goninja.RouteCreate, goninja.RouteUpdate, goninja.RouteDelete},
+				Auth:   []goninja.Authenticator{newAPIKeyAuth(apiKey)},
+			},
+		}
+		app.MountWithConfig(mux, cfg, resources...)
+		log.Println("PROTOTYPE_API_KEY set: create/update/delete require X-API-Key")
+	} else {
+		app.Mount(mux, resources...)
+	}
 	// docsui.ReDoc() is a drop-in alternative to docsui.SwaggerUI() here.
 	app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 

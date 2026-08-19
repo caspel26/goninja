@@ -1,6 +1,8 @@
 package codegen
 
 import (
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
@@ -312,6 +314,40 @@ type Plain struct {
 	models, err := ParseModels(dir)
 	if err != nil {
 		t.Fatalf("ParseModels: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("expected 0 models, got %d", len(models))
+	}
+}
+
+func TestExprToString_SelectorWithUnsupportedQualifierErrors(t *testing.T) {
+	// A SelectorExpr whose X is itself unsupported (never produced by real
+	// Go source for a field type, but exprToString must still propagate
+	// the error rather than only handling it at the top level).
+	expr := &ast.SelectorExpr{
+		X:   &ast.MapType{Key: &ast.Ident{Name: "string"}, Value: &ast.Ident{Name: "string"}},
+		Sel: &ast.Ident{Name: "Field"},
+	}
+
+	if _, err := exprToString(expr); err == nil {
+		t.Fatal("exprToString: err = nil, want an error propagated from the unsupported qualifier")
+	}
+}
+
+func TestParseGenDeclModels_SkipsNonTypeSpec(t *testing.T) {
+	// A *ast.GenDecl with token.TYPE can only legally contain *ast.TypeSpec
+	// specs from real source, so this exercises the defensive skip branch
+	// directly rather than via ParseModels.
+	gen := &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: `"fmt"`}},
+		},
+	}
+
+	models, err := parseGenDeclModels(gen)
+	if err != nil {
+		t.Fatalf("parseGenDeclModels: %v", err)
 	}
 	if len(models) != 0 {
 		t.Fatalf("expected 0 models, got %d", len(models))

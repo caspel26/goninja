@@ -363,7 +363,12 @@ Postgres and is the concrete proof for the Phase 0-2 exit criteria:
   api.NewAuthorResource(db), api.NewBookResource(db))` call (`app` a
   `*goninja.API`), then mounts a docs UI over the merged doc at `/docs`
   (`app.MountDocs(mux, "/docs", docsui.SwaggerUI())` — `docsui.ReDoc()` is a
-  drop-in alternative).
+  drop-in alternative). If `PROTOTYPE_API_KEY` is set, `main.go` switches
+  to `app.MountWithConfig` instead, wiring `auth.go`'s `newAPIKeyAuth` (a
+  `goninja.APIKeyHeader` — see below — checking `X-API-Key` at constant
+  time) to protect create/update/delete on every resource — the concrete
+  proof for plan section 5.15. Unset, the prototype stays fully public,
+  same as before that section existed.
 
 When changing the generator's output shape (schemas, handler signatures,
 route registration, query behavior), the templates in
@@ -490,19 +495,24 @@ hand-editing anything under `examples/prototype/internal/api`.
   which routes each method emits — `Routes` is opt-in restriction
   (nil/empty means every route), not an enable list that must be spelled
   out in full. `OpenAPI()` mirrors this exactly so the merged spec never
-  documents a route `Register` didn't actually mount. `ResourceConfig.Auth`
-  (`AuthOverride.AlsoProtect`/`Public`) is additive-only by design (a
-  per-resource override can only ever add protection relative to the
-  global default, never silently remove it) and is now enforced: `Register`
-  wraps every handler through `r.Protect(route, cfg, handler)`
-  (`BaseResource`, `resource.go`), which combines `cfg.Auth` with the
-  resource's `Config` (global `DefaultAuth`/`Middleware`, set via
+  documents a route `Register` didn't actually mount. `ResourceConfig.Auth
+  map[goninja.Route]goninja.RouteAuth` (redesigned 2026-08-20, see the
+  `Authenticator` note below) overrides the global default per route: a
+  route present as a map key is always overridden — `RouteAuth.Public`
+  removes protection, a non-empty `RouteAuth.Auth` swaps in different
+  `Authenticator`s, and a present-but-empty entry (`RouteAuth{}`) opts that
+  route into the global default's `Authenticator`s — and is enforced by
+  `Register` wrapping every handler through `r.Protect(route, cfg,
+  handler)` (`BaseResource`, `resource.go`), which resolves `cfg.Auth`
+  against the resource's `Config` (global `DefaultAuth`, set via
   `API.MountWithConfig` — a caller uses it instead of `API.Mount` once
   there's a global policy to enforce) to decide whether that route is
-  protected, then applies `DefaultAuth.Middleware` only if so and
-  `Config.Middleware` (logging/CORS-style) unconditionally. A resource
-  mounted via plain `API.Mount` has a zero `Config`, so `Protect` is a
-  no-op — no behavior change for callers that don't opt in.
+  protected and by which `Authenticator`s, wraps the handler in
+  `requireAuth` (tries each resolved `Authenticator` in order, first match
+  wins) only if so, and applies `Config.Middleware` (logging/CORS-style)
+  unconditionally regardless. A resource mounted via plain `API.Mount` has
+  a zero `Config`, so `Protect` is a no-op — no behavior change for callers
+  that don't opt in.
 
 **Ad hoc feature addition (2026-08-19, same day as the subpackage split
 above): `goninja.Action` + `BaseResource.SetActions`** — a declarative way
@@ -513,9 +523,10 @@ the `@action` decorator from their other project,
 translated into an idiomatic Go equivalent with no reflection or
 decorators, consistent with the "nothing reflected at runtime" principle
 stated in the README. `actions.go` (root package) defines `Action` — a
-plain struct: `Name` (also the route-name key `ResourceConfig.Auth`'s
-`AlsoProtect`/`Public` and `Protect` target, same as `"list"`/`"create"`/
-etc.), `Detail` (mount under `<base>/{id}/<UrlPath>` instead of
+plain struct: `Name` (converted to `goninja.Route(a.Name)`, the key
+`ResourceConfig.Auth` and `Protect` target, same as `RouteList`/
+`RouteCreate`/etc — see the `Authenticator` note below), `Detail` (mount
+under `<base>/{id}/<UrlPath>` instead of
 `<base>/<UrlPath>`), `Method`, `UrlPath`, `Handler`, and optionally
 `Summary`/`Responses` to document it. `BaseResource.SetActions(actions
 ...Action)`/`Actions() []Action` (`resource.go`) store them directly on the
@@ -530,8 +541,8 @@ mirroring the generated resource — the user flagged it as duplication and
 it was replaced with the plain setter). `model.go.tmpl`'s generated
 `Register(mux)` and `OpenAPI()` both range over `r.Actions()` unconditionally
 (nil slice when unset, so nothing to do): `Register` mounts each `Action`
-after the CRUD routes, wrapped through `r.Protect(a.Name, cfg, a.Handler)`
-exactly like a CRUD route; `OpenAPI()` adds a path entry for each `Action`
+after the CRUD routes, wrapped through `r.Protect(goninja.Route(a.Name),
+cfg, a.Handler)` exactly like a CRUD route; `OpenAPI()` adds a path entry for each `Action`
 with a non-empty `Summary`, tagged the same as the resource's other
 operations. No wrapper type, `SetSelf`, or `Register`/`OpenAPI` override is
 needed — a resource used directly can call `SetActions` right after
@@ -553,3 +564,120 @@ inlined separately in both `Register` and `OpenAPI()` rather than factored
 into a shared helper function, since a package-level function would be
 generated once per model file and collide when multiple models share an
 output package (as `examples/prototype` does).
+
+**Ad hoc design change (2026-08-20, not a plan item, recorded as plan
+section 5.15): auth redesigned from string-list config to a
+`goninja.Authenticator` object**, replacing the `AuthPolicy{Protected,
+Middleware}`/`AuthOverride{AlsoProtect, Public}` shape from Phase 6. The
+user asked for a senior-engineer critique of the original design and it
+turned out to resemble DRF's `DEFAULT_PERMISSION_CLASSES` +
+`permission_classes` string-based pattern rather than Django Ninja's
+`AuthBase`-object-attached-at-registration pattern the user actually
+wanted compared against. Three concrete problems drove the redesign: route
+names were bare strings (`"list"`, `"create"`, ...) with no compile-time
+safety against a typo silently leaving a route unprotected or
+unrestricted; the generated OpenAPI document never reflected auth
+enforcement at all (`openapi.Operation` had no `Security` field, and
+generated `OpenAPI()` methods never consulted `Protect`); and
+`AuthOverride`'s "additive-only" doc comment was inaccurate — its `Public`
+field could already remove protection, so the docs and the code
+disagreed. Since goninja is pre-alpha and unreleased with no users, the
+user explicitly rejected backward-compatibility as a reason to keep the
+old shape ("we didnt released it and no one still does not use it whats
+the problem") — the redesign proceeded as a clean replacement, not an
+additive/deprecating one.
+
+The new shape, across `route.go` (new), `auth.go`, `config.go`,
+`resource_config.go`, `resource.go`, `actions.go`, `api.go`, and
+`openapi/openapi.go`:
+
+- `type Route string` (`route.go`) with typed constants `RouteList`/
+  `RouteRetrieve`/`RouteCreate`/`RouteUpdate`/`RouteDelete` replaces every
+  bare route-name string in the auth/config/routing APIs — a typo is now a
+  compile error. `Action.Name` (a plain string, since it also names
+  arbitrary custom routes) converts via `goninja.Route(a.Name)` wherever it
+  targets `ResourceConfig.Auth`/`Protect`.
+- `goninja.Authenticator` (`auth.go`) is the new auth primitive, mirroring
+  Django Ninja's `AuthBase` rather than a bare middleware func:
+  `Authenticate(r *http.Request) (User, bool)` (returns identity-or-decline
+  without touching the response, so several Authenticators can be tried in
+  OR order), `Name() string` (the key under which its OpenAPI security
+  scheme is registered), and `SecurityScheme() openapi.SecurityScheme`
+  (self-describing for docs — the same object that enforces auth is the
+  only place its documentation gets built, so the two can't drift apart,
+  which was the second problem above).
+- `AuthPolicy` (`config.go`) is now `{Routes []Route, Auth
+  []Authenticator}` — `Routes` names which routes require auth by default,
+  `Auth` is the ordered list of `Authenticator`s tried against them.
+  `Config.Middleware` (unchanged) still wraps every route unconditionally
+  for logging/CORS-style concerns unrelated to identity;
+  `AuthPolicy.Middleware` (the old auth-enforcing middleware slot) no
+  longer exists — a resolved `Authenticator` list is what
+  `BaseResource.Protect` wraps a handler with directly (`requireAuth`,
+  `resource.go`), not a middleware func the caller had to write themselves.
+- `ResourceConfig.Auth` (`resource_config.go`) is now `map[Route]RouteAuth`
+  — presence of a `Route` key is itself the "this route is overridden"
+  signal, replacing the two-list `AuthOverride{AlsoProtect, Public}` whose
+  additive-only claim didn't hold. `RouteAuth{Auth []Authenticator, Public
+  bool}`: `Public: true` removes protection for that route regardless of
+  the global default; a non-empty `Auth` swaps in different
+  `Authenticator`s than the default; a present-but-empty `RouteAuth{}`
+  opts a route the default doesn't cover into the default's
+  `Authenticator`s (mirrors the old `AlsoProtect` case, but as a map entry
+  rather than a second list that could disagree with `Public`).
+- `BaseResource.authenticatorsFor(route, rc)` (`resource.go`, unexported)
+  is the single place this resolution happens; `Protect` and the new
+  `SecurityFor` (used by generated `OpenAPI()` methods, see below) both
+  call it, so what's enforced and what's documented can never diverge —
+  directly fixing the second problem above.
+- `openapi.Operation` gained `Security []map[string][]string`
+  (`openapi/openapi.go`) — an OR-tried list of alternative requirements,
+  matching how `requireAuth` tries `Authenticator`s in order.
+  `openapi.SecurityScheme` and `Components.SecuritySchemes` are new;
+  `OpenAPIProvider.OpenAPI()` now returns a third value,
+  `securitySchemes map[string]SecurityScheme`, merged by `API.Add`
+  (`api.go`) into `API`'s own `securitySchemes` field and included in
+  `Spec()`'s `Components`. `model.go.tmpl`'s generated `OpenAPI()` builds
+  this via a new `openAPISecurity(route, cfg, schemes)` helper calling
+  `r.SecurityFor` per operation, for both CRUD routes and `Action`s.
+
+Net effect: `Config`/`ResourceConfig`/`Action`/`API.MountWithConfig` are
+unchanged in shape or call sites beyond the `Route`/`Authenticator`
+types — a caller who already had `API.MountWithConfig(mux, cfg,
+resources...)` still calls it the same way, just constructing `cfg` from
+`Authenticator` objects instead of a middleware func plus string lists.
+Every test file referencing the old shapes
+(`resource_test.go`/`resource_config_test.go`/`api_test.go`/
+`config_test.go`/`goninjatest/server_test.go`/
+`internal/codegen/generate_test.go`, plus `examples/prototype`'s generated
+output) was updated to compile and pass against the new one;
+`OpenAPIProvider.OpenAPI()`'s new third return value is why
+`config_test.go`'s and `goninjatest/server_test.go`'s hand-written
+`fakeResource` types needed updating too, despite neither test file
+exercising auth directly. Verified against a real generated resource, not
+just hand-written fakes: `examples/prototype/auth.go`'s `newAPIKeyAuth`
+builds a `goninja.APIKeyHeader` (see the built-in-Authenticators note
+below) wired into `main.go` behind an optional `PROTOTYPE_API_KEY` env
+var — set it and `app.MountWithConfig` protects create/update/delete on
+every resource; leave it unset and the prototype behaves exactly as
+before this section existed (`app.Mount`, fully public).
+
+**Same-day follow-up: built-in `Authenticator` implementations
+(`authenticators.go`, root package).** The user asked whether ready-made
+Authenticators for common schemes were worth adding, comparing to Django
+Ninja's `HttpBearer`/`ApiKeyHeader` base classes cited in the 5.15 gap
+analysis above. Added four: `HTTPBearer` (`Authorization: Bearer <token>`),
+`HTTPBasic` (RFC 7617, via `r.BasicAuth()`), `APIKeyHeader` (configurable
+header, default `X-API-Key`), `CookieKey` (configurable cookie, default
+`session`) — each a plain struct with a `Verify` closure (receives the
+already-extracted credential, returns `(User, bool)`) plus optional
+`AuthName`/`HeaderName`/`CookieName` overrides, satisfying `Authenticator`
+with no boilerplate on the caller's side. These are conveniences, not a
+replacement for implementing `Authenticator` directly — an unusual scheme
+(custom header, multiple combined credentials) still does that, same as
+the README's own `BearerAuth` example. `examples/prototype/auth.go`'s
+`newAPIKeyAuth` was updated to build a `goninja.APIKeyHeader` instead of a
+hand-rolled type, proving it end to end; test coverage on the new file is
+100% (`authenticators_test.go`, table-driven to stay under SonarQube's
+cognitive-complexity threshold — the same threshold that earlier forced
+`resource_test.go`'s `TestBaseResource_Protect` to split in two).

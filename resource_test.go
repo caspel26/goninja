@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/caspel26/goninja/openapi"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -132,14 +133,33 @@ func TestBaseResource_SetSelf_Self(t *testing.T) {
 	}
 }
 
+type fakeAuthenticator struct {
+	name    string
+	allow   bool
+	authRan *bool
+}
+
+func (a *fakeAuthenticator) Authenticate(r *http.Request) (User, bool) {
+	if a.authRan != nil {
+		*a.authRan = true
+	}
+	if !a.allow {
+		return nil, false
+	}
+	return stubUser{id: a.name}, true
+}
+func (a *fakeAuthenticator) Name() string { return a.name }
+func (a *fakeAuthenticator) SecurityScheme() openapi.SecurityScheme {
+	return openapi.SecurityScheme{Type: "http", Scheme: "bearer"}
+}
+
+type stubUser struct{ id string }
+
+func (u stubUser) ID() string { return u.id }
+
 func TestBaseResource_Protect(t *testing.T) {
 	var authRan, globalRan bool
-	authMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authRan = true
-			next.ServeHTTP(w, r)
-		})
-	}
+	auth := &fakeAuthenticator{name: "test", allow: true, authRan: &authRan}
 	globalMW := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			globalRan = true
@@ -150,8 +170,8 @@ func TestBaseResource_Protect(t *testing.T) {
 	var r BaseResource
 	r.SetConfig(Config{
 		DefaultAuth: AuthPolicy{
-			Protected:  []string{"create"},
-			Middleware: []func(http.Handler) http.Handler{authMW},
+			Routes: []Route{RouteCreate},
+			Auth:   []Authenticator{auth},
 		},
 		Middleware: []func(http.Handler) http.Handler{globalMW},
 	})
@@ -160,7 +180,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("protected route runs auth and global middleware", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("create", ResourceConfig{}, handler)
+		h := r.Protect(RouteCreate, ResourceConfig{}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 		if !authRan || !globalRan {
 			t.Errorf("authRan=%v globalRan=%v, want both true", authRan, globalRan)
@@ -169,7 +189,7 @@ func TestBaseResource_Protect(t *testing.T) {
 
 	t.Run("unprotected route only runs global middleware", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("list", ResourceConfig{}, handler)
+		h := r.Protect(RouteList, ResourceConfig{}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 		if authRan {
 			t.Error("authRan = true for an unprotected route, want false")
@@ -179,24 +199,124 @@ func TestBaseResource_Protect(t *testing.T) {
 		}
 	})
 
-	t.Run("AlsoProtect additively protects a route", func(t *testing.T) {
+}
+
+func TestBaseResource_Protect_ResourceConfigOverrides(t *testing.T) {
+	var authRan, globalRan bool
+	auth := &fakeAuthenticator{name: "test", allow: true, authRan: &authRan}
+	globalMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			globalRan = true
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	var r BaseResource
+	r.SetConfig(Config{
+		DefaultAuth: AuthPolicy{
+			Routes: []Route{RouteCreate},
+			Auth:   []Authenticator{auth},
+		},
+		Middleware: []func(http.Handler) http.Handler{globalMW},
+	})
+
+	handler := func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) }
+
+	t.Run("per-route override additively protects a route", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("retrieve", ResourceConfig{Auth: AuthOverride{AlsoProtect: []string{"retrieve"}}}, handler)
+		h := r.Protect(RouteRetrieve, ResourceConfig{Auth: map[Route]RouteAuth{RouteRetrieve: {}}}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 		if !authRan {
-			t.Error("authRan = false for a route added via AlsoProtect, want true")
+			t.Error("authRan = false for a route added via a RouteAuth override, want true")
 		}
 	})
 
 	t.Run("Public punches a hole in the default protection", func(t *testing.T) {
 		authRan, globalRan = false, false
-		h := r.Protect("create", ResourceConfig{Auth: AuthOverride{Public: []string{"create"}}}, handler)
+		h := r.Protect(RouteCreate, ResourceConfig{Auth: map[Route]RouteAuth{RouteCreate: {Public: true}}}, handler)
 		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 		if authRan {
-			t.Error("authRan = true for a route in Auth.Public, want false")
+			t.Error("authRan = true for a route marked Public, want false")
 		}
 		if !globalRan {
 			t.Error("globalRan = false, want true (global middleware still runs on a public route)")
+		}
+	})
+
+	t.Run("override with its own Auth replaces the default authenticators", func(t *testing.T) {
+		authRan, globalRan = false, false
+		var ownAuthRan bool
+		own := &fakeAuthenticator{name: "own", allow: true, authRan: &ownAuthRan}
+		h := r.Protect(RouteCreate, ResourceConfig{Auth: map[Route]RouteAuth{RouteCreate: {Auth: []Authenticator{own}}}}, handler)
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if authRan {
+			t.Error("authRan = true, want the override's own Authenticator used instead of the default")
+		}
+		if !ownAuthRan {
+			t.Error("the override's own Authenticator did not run")
+		}
+	})
+}
+
+func TestBaseResource_SecurityFor(t *testing.T) {
+	auth := &fakeAuthenticator{name: "test", allow: true}
+	var r BaseResource
+	r.SetConfig(Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}, Auth: []Authenticator{auth}}})
+
+	t.Run("protected route returns a requirement and its scheme", func(t *testing.T) {
+		reqs, schemes := r.SecurityFor(RouteCreate, ResourceConfig{})
+		if len(reqs) != 1 || len(reqs[0]["test"]) != 0 {
+			t.Errorf("reqs = %+v, want one entry for %q", reqs, "test")
+		}
+		if _, ok := schemes["test"]; !ok {
+			t.Errorf("schemes = %+v, want an entry for %q", schemes, "test")
+		}
+	})
+
+	t.Run("unprotected route returns nil", func(t *testing.T) {
+		reqs, schemes := r.SecurityFor(RouteList, ResourceConfig{})
+		if reqs != nil || schemes != nil {
+			t.Errorf("SecurityFor on an unprotected route = %v, %v, want nil, nil", reqs, schemes)
+		}
+	})
+
+	t.Run("protected route with no resolved Authenticators returns nil", func(t *testing.T) {
+		var empty BaseResource
+		empty.SetConfig(Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}})
+		reqs, schemes := empty.SecurityFor(RouteCreate, ResourceConfig{})
+		if reqs != nil || schemes != nil {
+			t.Errorf("SecurityFor with no Authenticators = %v, %v, want nil, nil", reqs, schemes)
+		}
+	})
+}
+
+func TestRequireAuth_TriesEachAuthenticatorInOrder(t *testing.T) {
+	var ran bool
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { ran = true })
+
+	t.Run("falls through to a later Authenticator that accepts", func(t *testing.T) {
+		ran = false
+		declining := &fakeAuthenticator{name: "declining", allow: false}
+		accepting := &fakeAuthenticator{name: "accepting", allow: true}
+		h := requireAuth([]Authenticator{declining, accepting}, handler)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if !ran {
+			t.Error("handler did not run even though the second Authenticator accepted")
+		}
+	})
+
+	t.Run("responds 401 once every Authenticator declines", func(t *testing.T) {
+		ran = false
+		declining := &fakeAuthenticator{name: "declining", allow: false}
+		h := requireAuth([]Authenticator{declining}, handler)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if ran {
+			t.Error("handler ran despite every Authenticator declining")
+		}
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
 		}
 	})
 }
@@ -240,13 +360,13 @@ func TestBaseResource_ExcludeFromDocs_DocsExcluded(t *testing.T) {
 
 func TestBaseResource_Config(t *testing.T) {
 	var r BaseResource
-	if r.Config().DefaultAuth.Protected != nil {
+	if r.Config().DefaultAuth.Routes != nil {
 		t.Error("Config() before SetConfig is not the zero value")
 	}
 
-	cfg := Config{DefaultAuth: AuthPolicy{Protected: []string{"create"}}}
+	cfg := Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}}
 	r.SetConfig(cfg)
-	if len(r.Config().DefaultAuth.Protected) != 1 || r.Config().DefaultAuth.Protected[0] != "create" {
+	if len(r.Config().DefaultAuth.Routes) != 1 || r.Config().DefaultAuth.Routes[0] != RouteCreate {
 		t.Errorf("Config() after SetConfig = %+v, want %+v", r.Config(), cfg)
 	}
 }
@@ -270,7 +390,7 @@ func TestBaseResource_Protect_ZeroConfigIsNoOp(t *testing.T) {
 	var ran bool
 	handler := func(w http.ResponseWriter, req *http.Request) { ran = true }
 
-	h := r.Protect("create", ResourceConfig{}, handler)
+	h := r.Protect(RouteCreate, ResourceConfig{}, handler)
 	h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
 
 	if !ran {

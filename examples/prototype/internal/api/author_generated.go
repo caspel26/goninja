@@ -406,12 +406,15 @@ func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request)
 }
 
 // OpenAPI returns this resource's fragment of a merged OpenAPI document —
-// the paths it mounts and the schemas those paths reference, built from
-// the same IR as the rest of this file, so they always match what
-// List/Retrieve/Create/Update actually accept and return. Pass this
-// resource to a goninja.API's Add method (alongside its Register(mux)
-// call) to merge it in, or just pass it to API.Mount; see API.MountDocs.
-func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
+// the paths it mounts, the schemas those paths reference, and the security
+// schemes any protected path's Security refers to (resolved via
+// r.SecurityFor, the same logic Register's r.Protect calls enforce, so the
+// two can't drift apart) — built from the same IR as the rest of this
+// file, so they always match what List/Retrieve/Create/Update actually
+// accept and return. Pass this resource to a goninja.API's Add method
+// (alongside its Register(mux) call) to merge it in, or just pass it to
+// API.Mount; see API.MountDocs.
+func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema, map[string]openapi.SecurityScheme) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
 		tags = []string{"Author"}
@@ -480,28 +483,42 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 	itemPath := basePath + "/{id}"
 
 	paths := map[string]*openapi.PathItem{}
+	securitySchemes := map[string]openapi.SecurityScheme{}
 
-	if item := r.openAPIBasePathItem(cfg, tags, listParams); item != nil {
+	if item := r.openAPIBasePathItem(cfg, tags, listParams, securitySchemes); item != nil {
 		paths[basePath] = item
 	}
-	if item := r.openAPIItemPathItem(cfg, tags, idParam); item != nil {
+	if item := r.openAPIItemPathItem(cfg, tags, idParam, securitySchemes); item != nil {
 		paths[itemPath] = item
 	}
-	r.openAPIActionPaths(paths, basePath, idParam, tags)
+	r.openAPIActionPaths(paths, basePath, idParam, tags, cfg, securitySchemes)
 
-	return paths, schemas
+	return paths, schemas, securitySchemes
+}
+
+// openAPISecurity resolves route's Security requirement via r.SecurityFor
+// and, if non-nil, merges its referenced SecurityScheme(s) into schemes —
+// shared by every op builder below so each documents exactly what
+// r.Protect enforces for that route.
+func (r *AuthorResource) openAPISecurity(route goninja.Route, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
+	reqs, s := r.SecurityFor(route, cfg)
+	for name, scheme := range s {
+		schemes[name] = scheme
+	}
+	return reqs
 }
 
 // openAPIBasePathItem builds the list/create *openapi.PathItem for
 // "authors" (nil if neither route is enabled) — split out of
 // OpenAPI() to keep its cognitive complexity in check.
-func (r *AuthorResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter) *openapi.PathItem {
+func (r *AuthorResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
 	item := &openapi.PathItem{}
-	if cfg.RouteEnabled("list") {
+	if cfg.RouteEnabled(goninja.RouteList) {
 		item.Get = &openapi.Operation{
 			Summary:    "List authors",
 			Tags:       tags,
 			Parameters: listParams,
+			Security:   r.openAPISecurity(goninja.RouteList, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
 					authorContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
@@ -509,10 +526,11 @@ func (r *AuthorResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []
 			},
 		}
 	}
-	if cfg.RouteEnabled("create") {
+	if cfg.RouteEnabled(goninja.RouteCreate) {
 		item.Post = &openapi.Operation{
-			Summary: "Create a author",
-			Tags:    tags,
+			Summary:  "Create a author",
+			Tags:     tags,
+			Security: r.openAPISecurity(goninja.RouteCreate, cfg, schemes),
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
@@ -537,13 +555,14 @@ func (r *AuthorResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []
 // for "authors/{id}" (nil if none of the three routes is
 // enabled) — split out of OpenAPI() to keep its cognitive complexity in
 // check.
-func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter) *openapi.PathItem {
+func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
 	item := &openapi.PathItem{}
-	if cfg.RouteEnabled("retrieve") {
+	if cfg.RouteEnabled(goninja.RouteRetrieve) {
 		item.Get = &openapi.Operation{
 			Summary:    "Retrieve a author",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
+			Security:   r.openAPISecurity(goninja.RouteRetrieve, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
 					authorContentTypeJSON: {Schema: openapi.Schema{Ref: authorRetrieveRef}},
@@ -552,11 +571,12 @@ func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []
 			},
 		}
 	}
-	if cfg.RouteEnabled("update") {
+	if cfg.RouteEnabled(goninja.RouteUpdate) {
 		item.Put = &openapi.Operation{
 			Summary:    "Update a author",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
+			Security:   r.openAPISecurity(goninja.RouteUpdate, cfg, schemes),
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
@@ -572,11 +592,12 @@ func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []
 			},
 		}
 	}
-	if cfg.RouteEnabled("delete") {
+	if cfg.RouteEnabled(goninja.RouteDelete) {
 		item.Delete = &openapi.Operation{
 			Summary:    "Delete a author",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
+			Security:   r.openAPISecurity(goninja.RouteDelete, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
 				"404": {Description: authorNotFoundDesc},
@@ -593,7 +614,7 @@ func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []
 // carries a Summary, mounted the same way Register mounts it (base or
 // "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
 // cognitive complexity in check.
-func (r *AuthorResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string) {
+func (r *AuthorResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) {
 	for _, a := range r.Actions() {
 		if a.Summary == "" {
 			continue
@@ -610,7 +631,7 @@ func (r *AuthorResource) openAPIActionPaths(paths map[string]*openapi.PathItem, 
 			item = &openapi.PathItem{}
 			paths[p] = item
 		}
-		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses}
+		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses, Security: r.openAPISecurity(goninja.Route(a.Name), cfg, schemes)}
 		if a.Detail {
 			op.Parameters = []openapi.Parameter{idParam}
 		}
@@ -643,27 +664,29 @@ func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// API.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain API.Mount has a zero Config, so Protect is a
-// no-op there. Every Action declared via SetActions is mounted last, on the
-// same mux, at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
+// API.MountWithConfig — see config.go) combined with cfg's own per-route
+// Auth override (ResourceConfig.Auth, keyed by Route); a resource mounted
+// via plain API.Mount has a zero Config, so Protect is a no-op there.
+// Every Action declared via SetActions is mounted last, on the same mux,
+// at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/authors")
-	if cfg.RouteEnabled("list") {
-		mux.HandleFunc("GET "+path, r.Protect("list", cfg, r.listHandler))
-	}
-	if cfg.RouteEnabled("create") {
-		mux.HandleFunc("POST "+path, r.Protect("create", cfg, r.createHandler))
-	}
-	if cfg.RouteEnabled("retrieve") {
-		mux.HandleFunc("GET "+path+"/{id}", r.Protect("retrieve", cfg, r.retrieveHandler))
-	}
-	if cfg.RouteEnabled("update") {
-		mux.HandleFunc("PUT "+path+"/{id}", r.Protect("update", cfg, r.updateHandler))
-	}
-	if cfg.RouteEnabled("delete") {
-		mux.HandleFunc("DELETE "+path+"/{id}", r.Protect("delete", cfg, r.deleteHandler))
+	for _, rt := range [...]struct {
+		route   goninja.Route
+		method  string
+		path    string
+		handler http.HandlerFunc
+	}{
+		{goninja.RouteList, "GET", path, r.listHandler},
+		{goninja.RouteCreate, "POST", path, r.createHandler},
+		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
+		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
+		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
+	} {
+		if cfg.RouteEnabled(rt.route) {
+			mux.HandleFunc(rt.method+" "+rt.path, r.Protect(rt.route, cfg, rt.handler))
+		}
 	}
 	for _, a := range r.Actions() {
 		p := path
@@ -673,6 +696,6 @@ func (r *AuthorResource) Register(mux *http.ServeMux) {
 		if a.UrlPath != "" {
 			p += "/" + a.UrlPath
 		}
-		mux.HandleFunc(a.Method+" "+p, r.Protect(a.Name, cfg, a.Handler))
+		mux.HandleFunc(a.Method+" "+p, r.Protect(goninja.Route(a.Name), cfg, a.Handler))
 	}
 }

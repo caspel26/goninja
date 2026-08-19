@@ -13,8 +13,8 @@ import (
 // Register(mux)/OpenAPI() mount and (optionally) document each one
 // automatically.
 type Action struct {
-	// Name identifies the action for ResourceConfig.Auth
-	// (AlsoProtect/Public) and Protect, the same way "list"/"create"/etc
+	// Name identifies the action for ResourceConfig.Auth (keyed by
+	// Route(Name)) and Protect, the same way RouteCreate/RouteUpdate/etc
 	// identify a CRUD route. Required.
 	Name string
 	// Detail mounts this action under the resource's item path
