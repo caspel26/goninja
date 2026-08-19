@@ -103,6 +103,31 @@ type TaskResource struct {
 func NewTaskResource(db *gorm.DB) *TaskResource {
 	r := &TaskResource{}
 	r.SetDB(db)
+	r.SetSelf(r)
+	return r
+}
+
+// TaskOps is the method set the generated handlers dispatch
+// every request through. A type embedding TaskResource and
+// overriding one of these methods (plan section 5.10) is picked up
+// automatically once wired in via SetSelf — see ops() below.
+type TaskOps interface {
+	List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error)
+	Retrieve(ctx context.Context, id string) (*TaskRetrieve, error)
+	Create(ctx context.Context, in TaskCreate) (*TaskRetrieve, error)
+	Update(ctx context.Context, id string, in TaskUpdate) (*TaskRetrieve, error)
+	Delete(ctx context.Context, id string) error
+}
+
+// ops returns the TaskOps the generated handlers should call:
+// r.Self() if it satisfies the interface (a wrapper type overriding one or
+// more methods), otherwise r itself. r.Self() is r by default (set by
+// NewTaskResource), so this is a no-op unless SetSelf was
+// called again with a different value.
+func (r *TaskResource) ops() TaskOps {
+	if o, ok := r.Self().(TaskOps); ok {
+		return o
+	}
 	return r
 }
 
@@ -239,7 +264,7 @@ func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	items, total, err := r.List(req.Context(), f)
+	items, total, err := r.ops().List(req.Context(), f)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -259,7 +284,7 @@ func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	out, err := r.Retrieve(req.Context(), id)
+	out, err := r.ops().Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -267,13 +292,34 @@ func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// createHandler runs BeforeCreateHook/AfterCreateHook (hooks.go), if r's
+// Self() implements them, in the same transaction as the create itself —
+// a hook returning an error rolls the whole request back (plan section
+// 5.6/5.7).
 func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 	var in TaskCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
-	out, err := r.Create(req.Context(), in)
+	self, ops := r.Self(), r.ops()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*TaskRetrieve, error) {
+		if h, ok := self.(goninja.BeforeCreateHook[TaskCreate]); ok {
+			if err := h.BeforeCreate(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		created, err := ops.Create(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		if h, ok := self.(goninja.AfterCreateHook[TaskRetrieve]); ok {
+			if err := h.AfterCreate(ctx, created); err != nil {
+				return nil, err
+			}
+		}
+		return created, nil
+	})
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -281,6 +327,8 @@ func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 	goninja.RespondJSON(w, http.StatusCreated, out)
 }
 
+// updateHandler runs BeforeUpdateHook (hooks.go), if r's Self() implements
+// it, in the same transaction as the update itself.
 func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -293,7 +341,15 @@ func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
-	out, err := r.Update(req.Context(), id, in)
+	self, ops := r.Self(), r.ops()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*TaskRetrieve, error) {
+		if h, ok := self.(goninja.BeforeUpdateHook[TaskUpdate]); ok {
+			if err := h.BeforeUpdate(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Update(ctx, id, in)
+	})
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -301,6 +357,8 @@ func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
+// it, in the same transaction as the delete itself.
 func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -308,7 +366,16 @@ func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.Delete(req.Context(), id); err != nil {
+	self, ops := r.Self(), r.ops()
+	_, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (struct{}, error) {
+		if h, ok := self.(goninja.BeforeDeleteHook[string]); ok {
+			if err := h.BeforeDelete(ctx, id); err != nil {
+				return struct{}{}, err
+			}
+		}
+		return struct{}{}, ops.Delete(ctx, id)
+	})
+	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}

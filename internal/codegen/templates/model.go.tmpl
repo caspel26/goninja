@@ -142,6 +142,31 @@ type {{.Model.Name}}Resource struct {
 func New{{.Model.Name}}Resource(db *gorm.DB) *{{.Model.Name}}Resource {
 	r := &{{.Model.Name}}Resource{}
 	r.SetDB(db)
+	r.SetSelf(r)
+	return r
+}
+
+// {{.Model.Name}}Ops is the method set the generated handlers dispatch
+// every request through. A type embedding {{.Model.Name}}Resource and
+// overriding one of these methods (plan section 5.10) is picked up
+// automatically once wired in via SetSelf — see ops() below.
+type {{.Model.Name}}Ops interface {
+	List(ctx context.Context, f {{.Model.Name}}Filters) ([]{{.Model.Name}}List, int64, error)
+	Retrieve(ctx context.Context, id {{$idType}}) (*{{.Model.Name}}Retrieve, error)
+	Create(ctx context.Context, in {{.Model.Name}}Create) (*{{.Model.Name}}Retrieve, error)
+	Update(ctx context.Context, id {{$idType}}, in {{.Model.Name}}Update) (*{{.Model.Name}}Retrieve, error)
+	Delete(ctx context.Context, id {{$idType}}) error
+}
+
+// ops returns the {{.Model.Name}}Ops the generated handlers should call:
+// r.Self() if it satisfies the interface (a wrapper type overriding one or
+// more methods), otherwise r itself. r.Self() is r by default (set by
+// New{{.Model.Name}}Resource), so this is a no-op unless SetSelf was
+// called again with a different value.
+func (r *{{.Model.Name}}Resource) ops() {{.Model.Name}}Ops {
+	if o, ok := r.Self().({{.Model.Name}}Ops); ok {
+		return o
+	}
 	return r
 }
 
@@ -353,7 +378,7 @@ func (r *{{.Model.Name}}Resource) listHandler(w http.ResponseWriter, req *http.R
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	items, total, err := r.List(req.Context(), f)
+	items, total, err := r.ops().List(req.Context(), f)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -368,7 +393,7 @@ func (r *{{.Model.Name}}Resource) listHandler(w http.ResponseWriter, req *http.R
 
 func (r *{{.Model.Name}}Resource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
 	{{- template "parseID" .}}
-	out, err := r.Retrieve(req.Context(), id)
+	out, err := r.ops().Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -376,13 +401,34 @@ func (r *{{.Model.Name}}Resource) retrieveHandler(w http.ResponseWriter, req *ht
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// createHandler runs BeforeCreateHook/AfterCreateHook (hooks.go), if r's
+// Self() implements them, in the same transaction as the create itself —
+// a hook returning an error rolls the whole request back (plan section
+// 5.6/5.7).
 func (r *{{.Model.Name}}Resource) createHandler(w http.ResponseWriter, req *http.Request) {
 	var in {{.Model.Name}}Create
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
-	out, err := r.Create(req.Context(), in)
+	self, ops := r.Self(), r.ops()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*{{.Model.Name}}Retrieve, error) {
+		if h, ok := self.(goninja.BeforeCreateHook[{{.Model.Name}}Create]); ok {
+			if err := h.BeforeCreate(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		created, err := ops.Create(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		if h, ok := self.(goninja.AfterCreateHook[{{.Model.Name}}Retrieve]); ok {
+			if err := h.AfterCreate(ctx, created); err != nil {
+				return nil, err
+			}
+		}
+		return created, nil
+	})
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -390,6 +436,8 @@ func (r *{{.Model.Name}}Resource) createHandler(w http.ResponseWriter, req *http
 	goninja.RespondJSON(w, http.StatusCreated, out)
 }
 
+// updateHandler runs BeforeUpdateHook (hooks.go), if r's Self() implements
+// it, in the same transaction as the update itself.
 func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	{{- template "parseID" .}}
 	var in {{.Model.Name}}Update
@@ -397,7 +445,15 @@ func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
-	out, err := r.Update(req.Context(), id, in)
+	self, ops := r.Self(), r.ops()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*{{.Model.Name}}Retrieve, error) {
+		if h, ok := self.(goninja.BeforeUpdateHook[{{.Model.Name}}Update]); ok {
+			if err := h.BeforeUpdate(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Update(ctx, id, in)
+	})
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -405,9 +461,20 @@ func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
+// it, in the same transaction as the delete itself.
 func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	{{- template "parseID" .}}
-	if err := r.Delete(req.Context(), id); err != nil {
+	self, ops := r.Self(), r.ops()
+	_, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (struct{}, error) {
+		if h, ok := self.(goninja.BeforeDeleteHook[{{$idType}}]); ok {
+			if err := h.BeforeDelete(ctx, id); err != nil {
+				return struct{}{}, err
+			}
+		}
+		return struct{}{}, ops.Delete(ctx, id)
+	})
+	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
