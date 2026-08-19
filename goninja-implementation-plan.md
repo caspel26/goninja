@@ -408,6 +408,10 @@ Si passa a Fase 1. Il parser/IR/template/CLI di Fase 0 (`internal/codegen`, `cmd
 
 **Exit criteria**: CRUD end-to-end su Postgres reale.
 
+**Stato (2026-08-19): completata.** `goninja.BaseResource`/`DB(ctx)`/`InTransaction` in `resource.go` (root package), metodi Resource generati (`List`/`Retrieve`/`Create`/`Update`/`Delete`) sopra GORM in `internal/codegen/templates/model.go.tmpl`, `Preload` automatico su `Retrieve` per i campi relazione (`Field.IsRelation` in `ir.go`). Verificato end-to-end su Postgres locale reale con tre modelli in `examples/prototype` (`Task`, `Author`, `Book` — `Book.Author` è una relazione belongs-to vera, per convenzione GORM): create/list/retrieve/update/delete su tutti e tre, retrieve di `Book` precarica `Author` senza che il chiamante lo richieda, list resta senza preload, 404 su record assente.
+
+Limiti noti, rimandati alle fasi successive: nessuna validazione input (Fase 3), error mapping solo NotFound→404/resto→500 come placeholder (Fase 3 introduce l'`ErrorMapper` pluggable), `Field.IsRelation` assume relazioni single-value (non gestisce ancora has-many/slice in conversione schema), ID assunto sempre `int64` e chiamato `ID`.
+
 ---
 
 ### Fase 3 — Schemi, validazione, serializzazione (16-20 hrs)
