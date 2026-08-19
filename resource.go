@@ -33,8 +33,10 @@ func TxFromContext(ctx context.Context) (*gorm.DB, bool) {
 // which is transaction-aware: inside InTransaction, DB(ctx) returns the
 // active transaction rather than the base connection.
 type BaseResource struct {
-	db          *gorm.DB
-	errorMapper ErrorMapper
+	db               *gorm.DB
+	errorMapper      ErrorMapper
+	openAPITags      []string
+	excludedFromDocs bool
 }
 
 // SetDB injects the base database connection. Called by the generated
@@ -57,6 +59,37 @@ func (r *BaseResource) ErrorMapper() ErrorMapper {
 		return DefaultErrorMapper{}
 	}
 	return r.errorMapper
+}
+
+// SetOpenAPITags overrides the OpenAPI tags every operation this
+// resource's generated OpenAPI() puts in its fragment carries — how
+// Swagger UI/ReDoc/etc group its routes in a rendered doc (plan section
+// 5.10/Fase 5). Optional: a resource with none set falls back to a single
+// tag equal to the model's name (e.g. "Book"), applied by the generated
+// OpenAPI() method itself.
+func (r *BaseResource) SetOpenAPITags(tags ...string) {
+	r.openAPITags = tags
+}
+
+// OpenAPITags returns the resource's configured OpenAPI tags, or nil if
+// SetOpenAPITags was never called — generated OpenAPI() methods fall back
+// to the model name in that case.
+func (r *BaseResource) OpenAPITags() []string {
+	return r.openAPITags
+}
+
+// ExcludeFromDocs opts this resource out of the OpenAPI document entirely —
+// its routes still get mounted by Register(mux) as normal, they just don't
+// appear in the merged spec (and so don't show up in Swagger UI/ReDoc/etc).
+// Useful for internal or half-built resources you don't want documented
+// yet. Mount checks this via the unexported excludedFromDocs so a caller
+// doesn't need to route excluded resources by hand.
+func (r *BaseResource) ExcludeFromDocs() {
+	r.excludedFromDocs = true
+}
+
+func (r *BaseResource) docsExcluded() bool {
+	return r.excludedFromDocs
 }
 
 // DB returns the connection to use for this context: the enclosing

@@ -81,6 +81,53 @@ func (f Field) IsNumeric() bool {
 	return scalarGoTypes[f.GoType] && !f.IsBool() && !f.IsString() && f.GoType != "time.Time"
 }
 
+// OpenAPIType returns the JSON Schema "type" for the field's Go type, used
+// when generating a schema property for it (plan section 5.10/Fase 5). A
+// relation field's own type is never used here — the template always emits
+// a $ref to the related model's Retrieve schema instead (see IsRelation).
+func (f Field) OpenAPIType() string {
+	switch {
+	case f.IsBool():
+		return "boolean"
+	case f.IsString():
+		return "string"
+	case f.IsFloat():
+		return "number"
+	case f.GoType == "time.Time":
+		return "string"
+	case f.IsNumeric():
+		return "integer"
+	default:
+		return "object"
+	}
+}
+
+// OpenAPIFormat returns the JSON Schema "format" for the field's Go type,
+// or "" when the type has none (e.g. plain string, boolean).
+func (f Field) OpenAPIFormat() string {
+	switch {
+	case f.GoType == "time.Time":
+		return "date-time"
+	case f.IsFloat():
+		return "double"
+	case strings.HasPrefix(f.GoType, "int") || strings.HasPrefix(f.GoType, "uint"):
+		return "int64"
+	default:
+		return ""
+	}
+}
+
+// IsRequired reports whether the field's validate tag includes "required",
+// used to populate a Create/Update schema's "required" list.
+func (f Field) IsRequired() bool {
+	for _, part := range strings.Split(f.ValidateTag, ",") {
+		if part == "required" {
+			return true
+		}
+	}
+	return false
+}
+
 // Model is a struct type discovered in the models package.
 type Model struct {
 	// Name is the Go type name, e.g. "Task".

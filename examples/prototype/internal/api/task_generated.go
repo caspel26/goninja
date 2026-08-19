@@ -315,6 +315,150 @@ func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OpenAPI returns this resource's fragment of a merged OpenAPI document
+// (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
+// paths reference, built from the same IR as the rest of this file, so
+// they always match what List/Retrieve/Create/Update actually accept and
+// return. Pass this resource to an goninja.API's Add method (alongside its
+// Register(mux) call) to merge it in; see goninja.MountDocs.
+func (r *TaskResource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+	tags := r.OpenAPITags()
+	if len(tags) == 0 {
+		tags = []string{"Task"}
+	}
+
+	schemas := map[string]goninja.Schema{
+		"TaskList": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":    {Type: "string"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
+			},
+		},
+		"TaskRetrieve": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":    {Type: "string"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
+			},
+		},
+		"TaskCreate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
+			},
+			Required: []string{"title"},
+		},
+		"TaskUpdate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
+			},
+			Required: []string{"title"},
+		},
+		"TaskListEnvelope": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/TaskList"}},
+				"total":  {Type: "integer", Format: "int64"},
+				"limit":  {Type: "integer"},
+				"offset": {Type: "integer"},
+			},
+		},
+	}
+
+	listParams := []goninja.Parameter{
+		{Name: "done", In: "query", Schema: goninja.Schema{Type: "boolean"}},
+		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+	}
+
+	idParam := goninja.Parameter{
+		Name:     "id",
+		In:       "path",
+		Required: true,
+		Schema:   goninja.Schema{Type: "string"},
+	}
+
+	paths := map[string]*goninja.PathItem{
+		"/tasks": {
+			Get: &goninja.Operation{
+				Summary:    "List tasks",
+				Tags:       tags,
+				Parameters: listParams,
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
+					}},
+				},
+			},
+			Post: &goninja.Operation{
+				Summary: "Create a task",
+				Tags:    tags,
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskCreate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"201": {Description: "Created", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					}},
+					"422": {Description: "Validation error"},
+				},
+			},
+		},
+		"/tasks/{id}": {
+			Get: &goninja.Operation{
+				Summary:    "Retrieve a task",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+				},
+			},
+			Put: &goninja.Operation{
+				Summary:    "Update a task",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskUpdate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+					"422": {Description: "Validation error"},
+				},
+			},
+			Delete: &goninja.Operation{
+				Summary:    "Delete a task",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"204": {Description: "No content"},
+					"404": {Description: "Not found"},
+				},
+			},
+		},
+	}
+
+	return paths, schemas
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
 // Task under /tasks on mux.
 func (r *TaskResource) Register(mux *http.ServeMux) {

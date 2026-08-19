@@ -308,6 +308,149 @@ func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OpenAPI returns this resource's fragment of a merged OpenAPI document
+// (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
+// paths reference, built from the same IR as the rest of this file, so
+// they always match what List/Retrieve/Create/Update actually accept and
+// return. Pass this resource to an goninja.API's Add method (alongside its
+// Register(mux) call) to merge it in; see goninja.MountDocs.
+func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+	tags := r.OpenAPITags()
+	if len(tags) == 0 {
+		tags = []string{"Author"}
+	}
+
+	schemas := map[string]goninja.Schema{
+		"AuthorList": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":   {Type: "string"},
+				"name": {Type: "string"},
+			},
+		},
+		"AuthorRetrieve": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":   {Type: "string"},
+				"name": {Type: "string"},
+				"bio":  {Type: "string"},
+			},
+		},
+		"AuthorCreate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"name": {Type: "string"},
+				"bio":  {Type: "string"},
+			},
+			Required: []string{"name"},
+		},
+		"AuthorUpdate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"name": {Type: "string"},
+				"bio":  {Type: "string"},
+			},
+			Required: []string{"name"},
+		},
+		"AuthorListEnvelope": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/AuthorList"}},
+				"total":  {Type: "integer", Format: "int64"},
+				"limit":  {Type: "integer"},
+				"offset": {Type: "integer"},
+			},
+		},
+	}
+
+	listParams := []goninja.Parameter{
+		{Name: "name", In: "query", Schema: goninja.Schema{Type: "string"}},
+		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+	}
+
+	idParam := goninja.Parameter{
+		Name:     "id",
+		In:       "path",
+		Required: true,
+		Schema:   goninja.Schema{Type: "string"},
+	}
+
+	paths := map[string]*goninja.PathItem{
+		"/authors": {
+			Get: &goninja.Operation{
+				Summary:    "List authors",
+				Tags:       tags,
+				Parameters: listParams,
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
+					}},
+				},
+			},
+			Post: &goninja.Operation{
+				Summary: "Create a author",
+				Tags:    tags,
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorCreate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"201": {Description: "Created", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+					}},
+					"422": {Description: "Validation error"},
+				},
+			},
+		},
+		"/authors/{id}": {
+			Get: &goninja.Operation{
+				Summary:    "Retrieve a author",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+				},
+			},
+			Put: &goninja.Operation{
+				Summary:    "Update a author",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+					"422": {Description: "Validation error"},
+				},
+			},
+			Delete: &goninja.Operation{
+				Summary:    "Delete a author",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"204": {Description: "No content"},
+					"404": {Description: "Not found"},
+				},
+			},
+		},
+	}
+
+	return paths, schemas
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
 // Author under /authors on mux.
 func (r *AuthorResource) Register(mux *http.ServeMux) {

@@ -388,6 +388,165 @@ func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OpenAPI returns this resource's fragment of a merged OpenAPI document
+// (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
+// paths reference, built from the same IR as the rest of this file, so
+// they always match what List/Retrieve/Create/Update actually accept and
+// return. Pass this resource to an goninja.API's Add method (alongside its
+// Register(mux) call) to merge it in; see goninja.MountDocs.
+func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+	tags := r.OpenAPITags()
+	if len(tags) == 0 {
+		tags = []string{"Book"}
+	}
+
+	schemas := map[string]goninja.Schema{
+		"BookList": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":         {Type: "string"},
+				"title":      {Type: "string"},
+				"author_id":  {Type: "string"},
+				"price":      {Type: "number", Format: "double"},
+				"published":  {Type: "boolean"},
+				"created_at": {Type: "string", Format: "date-time"},
+			},
+		},
+		"BookRetrieve": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"id":         {Type: "string"},
+				"title":      {Type: "string"},
+				"author_id":  {Type: "string"},
+				"author":     {Ref: "#/components/schemas/AuthorRetrieve"},
+				"price":      {Type: "number", Format: "double"},
+				"published":  {Type: "boolean"},
+				"created_at": {Type: "string", Format: "date-time"},
+			},
+		},
+		"BookCreate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"title":     {Type: "string"},
+				"author_id": {Type: "string"},
+				"price":     {Type: "number", Format: "double"},
+				"published": {Type: "boolean"},
+			},
+			Required: []string{"title", "author_id"},
+		},
+		"BookUpdate": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"title":     {Type: "string"},
+				"author_id": {Type: "string"},
+				"price":     {Type: "number", Format: "double"},
+				"published": {Type: "boolean"},
+			},
+			Required: []string{"title", "author_id"},
+		},
+		"BookListEnvelope": {
+			Type: "object",
+			Properties: map[string]goninja.Schema{
+				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/BookList"}},
+				"total":  {Type: "integer", Format: "int64"},
+				"limit":  {Type: "integer"},
+				"offset": {Type: "integer"},
+			},
+		},
+	}
+
+	listParams := []goninja.Parameter{
+		{Name: "author_id", In: "query", Schema: goninja.Schema{Type: "string"}},
+		{Name: "price", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
+		{Name: "price_min", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
+		{Name: "price_max", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
+		{Name: "published", In: "query", Schema: goninja.Schema{Type: "boolean"}},
+		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+	}
+
+	idParam := goninja.Parameter{
+		Name:     "id",
+		In:       "path",
+		Required: true,
+		Schema:   goninja.Schema{Type: "string"},
+	}
+
+	paths := map[string]*goninja.PathItem{
+		"/books": {
+			Get: &goninja.Operation{
+				Summary:    "List books",
+				Tags:       tags,
+				Parameters: listParams,
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
+					}},
+				},
+			},
+			Post: &goninja.Operation{
+				Summary: "Create a book",
+				Tags:    tags,
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookCreate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"201": {Description: "Created", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					}},
+					"422": {Description: "Validation error"},
+				},
+			},
+		},
+		"/books/{id}": {
+			Get: &goninja.Operation{
+				Summary:    "Retrieve a book",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+				},
+			},
+			Put: &goninja.Operation{
+				Summary:    "Update a book",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				RequestBody: &goninja.RequestBody{
+					Required: true,
+					Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookUpdate"}},
+					},
+				},
+				Responses: map[string]goninja.Response{
+					"200": {Description: "OK", Content: map[string]goninja.MediaType{
+						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					}},
+					"404": {Description: "Not found"},
+					"422": {Description: "Validation error"},
+				},
+			},
+			Delete: &goninja.Operation{
+				Summary:    "Delete a book",
+				Tags:       tags,
+				Parameters: []goninja.Parameter{idParam},
+				Responses: map[string]goninja.Response{
+					"204": {Description: "No content"},
+					"404": {Description: "Not found"},
+				},
+			},
+		},
+	}
+
+	return paths, schemas
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
 // Book under /books on mux.
 func (r *BookResource) Register(mux *http.ServeMux) {
