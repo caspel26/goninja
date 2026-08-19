@@ -35,9 +35,34 @@ $ goninja generate
 ```
 
 This generates typed schemas, handlers, database queries, and an OpenAPI
-fragment for the model, mounted onto a standard `net/http` mux — no
-runtime reflection, no hidden magic: the generated code is plain Go you
-can read, debug, and step through.
+fragment for the model — plain Go under `internal/api`, readable and
+debuggable, nothing reflected at runtime. Wiring it into a server is a few
+lines, no framework of its own to learn:
+
+```go
+// main.go
+func main() {
+    db, _ := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
+
+    mux := http.NewServeMux()
+    doc := goninja.NewAPI("Bookstore API", "0.1.0")
+
+    goninja.Mount(mux, doc,
+        api.NewAuthorResource(db),
+        api.NewBookResource(db),
+    )
+    goninja.MountDocs(mux, doc, "/docs", goninja.SwaggerUI())
+
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+That's a full `net/http` server: `GET/POST /books`, `GET/PUT/DELETE
+/books/{id}`, filtering, pagination, validation, and `/docs` — all from the
+struct at the top. `goninja.Mount` just does `Register(mux)` +
+`doc.Add(...)` for every resource passed to it, so you're never required to
+go through it either.
 
 > **Status: pre-alpha.** The API above is the design target. What exists
 > today is an early prototype — see [Status](#status).
@@ -86,7 +111,44 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-Auth and hooks are designed but not yet built.
+Hooks and per-method overriding (below) are built; auth is still designed
+but not yet built.
+
+### Example: create → retrieve → filter
+
+Real output from a running `examples/prototype` server — nothing edited:
+
+```console
+$ curl -s -X POST localhost:8080/authors \
+    -d '{"name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."}'
+{"id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."}
+
+$ curl -s -X POST localhost:8080/books \
+    -d '{"title":"The Left Hand of Darkness","author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","price":14.99,"published":true}'
+{"id":"0aac15c6-df8d-4696-af75-f625794b7f3a","title":"The Left Hand of Darkness",
+ "author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d",
+ "author":{"id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","name":"Ursula K. Le Guin","bio":"Author of the Earthsea series."},
+ "price":14.99,"published":true,"created_at":"2026-08-19T15:19:34+02:00"}
+```
+
+`Create`/`Retrieve` preload `Author` automatically and nest it as its own
+`Retrieve` shape — no separate round trip. `List` never preloads, by
+design, so it stays lean:
+
+```console
+$ curl -s 'localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20'
+{"items":[
+  {"id":"0aac15c6-df8d-4696-af75-f625794b7f3a","title":"The Left Hand of Darkness","author_id":"76f431cf-5418-448a-a0bb-fd5b7853b27d","price":14.99,"published":true,"created_at":"2026-08-19T15:19:34+02:00"},
+  {"id":"46a4b864-0d95-4e60-8db0-ce94beff83b0","title":"Book 2","author_id":"a9132a58-0531-4d98-9906-1776da5036f4","price":10,"published":true,"created_at":"2026-08-19T12:34:12+02:00"}
+],"total":2,"limit":20,"offset":0}
+```
+
+And a `validate`-tag failure never reaches the database:
+
+```console
+$ curl -s -X POST localhost:8080/books -d '{"author_id":"76f431cf-...","price":5}'   # no title
+{"code":"VALIDATION_FAILED","errors":{"title":"required"}}
+```
 
 ### Generated docs UI
 
@@ -116,6 +178,48 @@ Every operation is expandable into its request/response schema, complete
 with example values generated from the model's fields:
 
 <img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books operation with its request body schema and response example" width="720">
+
+### Extending a resource: hooks and overrides
+
+Nothing generated is meant to be edited by hand — you extend a resource by
+embedding it in your own type. Go has no dynamic dispatch through
+embedding, so a wrapper's overrides only take effect once you point the
+embedded resource's `Self()` at it:
+
+```go
+// resources.go — your file, never touched by the generator.
+type authorWithAudit struct {
+    *api.AuthorResource
+}
+
+// BeforeCreateHook: runs inside the same transaction as Create, and an
+// error here rolls the whole request back — nothing gets written.
+func (r *authorWithAudit) BeforeCreate(ctx context.Context, in *api.AuthorCreate) error {
+    if in.Name == "" {
+        return goninja.ValidationError{Fields: map[string]string{"name": "required"}}
+    }
+    return nil
+}
+
+// AfterCreateHook: runs once the row exists, still inside that transaction.
+func (r *authorWithAudit) AfterCreate(ctx context.Context, out *api.AuthorRetrieve) error {
+    log.Printf("author created: %s", out.ID)
+    return nil
+}
+
+func NewAuthorWithAudit(db *gorm.DB) *authorWithAudit {
+    inner := api.NewAuthorResource(db)
+    w := &authorWithAudit{AuthorResource: inner}
+    inner.SetSelf(w) // wires the wrapper's hooks/overrides into the generated handlers
+    return w
+}
+```
+
+`BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/`BeforeDeleteHook`
+are plain optional interfaces (`goninja` root package) — implement only the
+ones you need. The same `SetSelf` wiring also makes an overridden
+`Retrieve`/`List`/`Update`/`Delete` method take effect, e.g. to add
+caching in front of the generated query without forking it.
 
 ## Contributing
 
