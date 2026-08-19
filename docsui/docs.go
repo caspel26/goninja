@@ -28,6 +28,10 @@ type DocsUI interface {
 	Assets() map[string]DocsAsset
 }
 
+// headerContentType is the HTTP header name MountDocs sets on every route
+// it registers (spec JSON, each UI asset, the index page).
+const headerContentType = "Content-Type"
+
 // DocsAsset is one static file a DocsUI serves alongside its Index page.
 type DocsAsset struct {
 	Data        []byte
@@ -58,7 +62,7 @@ func MountDocs(mux *http.ServeMux, api SpecSource, path string, ui DocsUI) {
 	specPath := path + "/openapi.json"
 
 	mux.HandleFunc("GET "+specPath, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headerContentType, "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(api.Spec())
 	})
@@ -66,14 +70,14 @@ func MountDocs(mux *http.ServeMux, api SpecSource, path string, ui DocsUI) {
 	for route, asset := range ui.Assets() {
 		asset := asset
 		mux.HandleFunc("GET "+path+"/"+route, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", asset.ContentType)
+			w.Header().Set(headerContentType, asset.ContentType)
 			w.Write(asset.Data)
 		})
 	}
 
 	index := ui.Index(specPath)
 	mux.HandleFunc("GET "+path+"/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set(headerContentType, "text/html; charset=utf-8")
 		w.Write(index)
 	})
 	mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
