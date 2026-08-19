@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Runs the framework's test suite (root goninja package, internal/codegen,
-# and the openapi/docsui/id subpackages split out of root — per
+# and the openapi/docsui/id/goninjatest subpackages split out of root — per
 # CLAUDE.md/the implementation plan) with coverage instrumentation, prints
 # the total percentage, and — if a threshold is passed as $1 — fails when
 # total coverage is below it. Used by `make cover` locally and by CI
 # (.github/workflows/go.yml) to enforce the agreed minimum. Deliberately
 # excludes cmd/goninja (thin flag-parsing wrapper) and examples/prototype
-# (exercised manually against real Postgres, not unit tested).
+# (exercised manually against real Postgres, not unit tested — its own
+# goninjatest-based test is coverage for goninjatest, not for the example).
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 profile="coverage.out" # gitignored; scripts/coverage_badge.sh reads this back
 
-go test . ./internal/codegen ./docsui ./id ./openapi -coverprofile="$profile" -covermode=atomic
+go test . ./internal/codegen ./docsui ./id ./openapi ./goninjatest -coverprofile="$profile" -covermode=atomic
 
 total="$(go tool cover -func="$profile" | awk '/^total:/ {print $3}' | tr -d '%')"
 echo "total coverage: ${total}%"
