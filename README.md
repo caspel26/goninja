@@ -68,7 +68,13 @@ per-field 422 responses, `filter`-tag-driven filtering with limit/offset
 pagination and ordering behind a `{items, total, limit, offset}` envelope)
 for any number of models, verified end to end against Postgres. A model's
 ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
-generates itself) — `examples/prototype`'s models use UUID IDs.
+generates itself) — `examples/prototype`'s models use UUID IDs. Every
+generated resource also emits an OpenAPI 3.0 fragment from the same
+annotations, groupable under custom tags per resource; `goninja.MountDocs`
+merges every registered resource's fragment and serves it as JSON plus a
+docs UI — Swagger UI or ReDoc ship built in, both fully embedded with no
+external CDN, and the `DocsUI` interface it takes isn't hardcoded to
+either.
 
 Try it (needs a running Postgres):
 
@@ -77,9 +83,39 @@ $ export PROTOTYPE_DSN="host=localhost user=$(whoami) dbname=goninja_prototype s
 $ make generate-prototype   # writes examples/prototype/internal/api
 $ make run-prototype        # serves /tasks, /authors, /books on :8080
 $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20"
+$ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-OpenAPI, auth, and hooks are designed but not yet built.
+Auth and hooks are designed but not yet built.
+
+### Generated docs UI
+
+`/docs` renders the merged OpenAPI document with either UI, both fully
+embedded (no external CDN):
+
+<table>
+<tr>
+<td width="50%">
+
+**Swagger UI** (`goninja.SwaggerUI()`, the default)
+
+<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model">
+
+</td>
+<td width="50%">
+
+**ReDoc** (`goninja.ReDoc()`, a drop-in swap)
+
+<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples">
+
+</td>
+</tr>
+</table>
+
+Every operation is expandable into its request/response schema, complete
+with example values generated from the model's fields:
+
+<img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books operation with its request body schema and response example" width="720">
 
 ## Contributing
 
