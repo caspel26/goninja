@@ -10,13 +10,18 @@ import (
 	"strings"
 
 	"github.com/caspel26/goninja"
+	"github.com/caspel26/goninja/id"
+	"github.com/caspel26/goninja/mw"
+	"github.com/caspel26/goninja/openapi"
+	"github.com/caspel26/goninja/pagination"
+	"github.com/caspel26/goninja/validate"
 	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
 // AuthorList is the shape returned by GET /authors,
-// one item per row of the "items" field of goninja.ListEnvelope.
+// one item per row of the "items" field of pagination.ListEnvelope.
 type AuthorList struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -37,7 +42,7 @@ type AuthorRetrieve struct {
 
 // AuthorCreate is the shape accepted by POST /authors.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
-// the model field's own `validate` tag, and enforced by goninja.Validate
+// the model field's own `validate` tag, and enforced by validate.Validate
 // before Create runs.
 type AuthorCreate struct {
 	Name string `json:"name" validate:"required,max=120"`
@@ -186,7 +191,7 @@ func (r *AuthorResource) Retrieve(ctx context.Context, id string) (*AuthorRetrie
 }
 
 func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRetrieve, error) {
-	if err := goninja.Validate(in); err != nil {
+	if err := validate.Validate(in); err != nil {
 		return nil, err
 	}
 	m := models.Author{
@@ -194,7 +199,7 @@ func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRe
 		Bio:  in.Bio,
 	}
 	if m.ID == "" {
-		m.ID = goninja.NewUUID()
+		m.ID = id.NewUUID()
 	}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
@@ -203,7 +208,7 @@ func (r *AuthorResource) Create(ctx context.Context, in AuthorCreate) (*AuthorRe
 }
 
 func (r *AuthorResource) Update(ctx context.Context, id string, in AuthorUpdate) (*AuthorRetrieve, error) {
-	if err := goninja.Validate(in); err != nil {
+	if err := validate.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Author
@@ -244,7 +249,7 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 		f.Name = &parsed
 	}
 
-	limit, offset, err := goninja.ParseLimitOffset(q)
+	limit, offset, err := pagination.ParseLimitOffset(q)
 	if err != nil {
 		return f, err
 	}
@@ -266,7 +271,7 @@ func (r *AuthorResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[AuthorList]{
+	goninja.RespondJSON(w, http.StatusOK, pagination.ListEnvelope[AuthorList]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -383,25 +388,25 @@ func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request)
 // (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
 // paths reference, built from the same IR as the rest of this file, so
 // they always match what List/Retrieve/Create/Update actually accept and
-// return. Pass this resource to an goninja.API's Add method (alongside its
-// Register(mux) call) to merge it in; see goninja.MountDocs.
-func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+// return. Pass this resource to an openapi.API's Add method (alongside its
+// Register(mux) call) to merge it in; see docsui.MountDocs.
+func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
 		tags = []string{"Author"}
 	}
 
-	schemas := map[string]goninja.Schema{
+	schemas := map[string]openapi.Schema{
 		"AuthorList": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"id":   {Type: "string"},
 				"name": {Type: "string"},
 			},
 		},
 		"AuthorRetrieve": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"id":   {Type: "string"},
 				"name": {Type: "string"},
 				"bio":  {Type: "string"},
@@ -409,7 +414,7 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		},
 		"AuthorCreate": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"name": {Type: "string"},
 				"bio":  {Type: "string"},
 			},
@@ -417,7 +422,7 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		},
 		"AuthorUpdate": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"name": {Type: "string"},
 				"bio":  {Type: "string"},
 			},
@@ -425,8 +430,8 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		},
 		"AuthorListEnvelope": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
-				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/AuthorList"}},
+			Properties: map[string]openapi.Schema{
+				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/AuthorList"}},
 				"total":  {Type: "integer", Format: "int64"},
 				"limit":  {Type: "integer"},
 				"offset": {Type: "integer"},
@@ -434,52 +439,52 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		},
 	}
 
-	listParams := []goninja.Parameter{
-		{Name: "name", In: "query", Schema: goninja.Schema{Type: "string"}},
-		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+	listParams := []openapi.Parameter{
+		{Name: "name", In: "query", Schema: openapi.Schema{Type: "string"}},
+		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},
 	}
 
-	idParam := goninja.Parameter{
+	idParam := openapi.Parameter{
 		Name:     "id",
 		In:       "path",
 		Required: true,
-		Schema:   goninja.Schema{Type: "string"},
+		Schema:   openapi.Schema{Type: "string"},
 	}
 
 	cfg := r.resourceConfig()
 	basePath := cfg.PathOr("/authors")
 	itemPath := basePath + "/{id}"
 
-	paths := map[string]*goninja.PathItem{}
+	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &goninja.PathItem{}
+	basePathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &goninja.Operation{
+		basePathItem.Get = &openapi.Operation{
 			Summary:    "List authors",
 			Tags:       tags,
 			Parameters: listParams,
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &goninja.Operation{
+		basePathItem.Post = &openapi.Operation{
 			Summary: "Create a author",
 			Tags:    tags,
-			RequestBody: &goninja.RequestBody{
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorCreate"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorCreate"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"201": {Description: "Created", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+			Responses: map[string]openapi.Response{
+				"201": {Description: "Created", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
 				}},
 				"422": {Description: "Validation error"},
 			},
@@ -489,34 +494,34 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		paths[basePath] = basePathItem
 	}
 
-	itemPathItem := &goninja.PathItem{}
+	itemPathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &goninja.Operation{
+		itemPathItem.Get = &openapi.Operation{
 			Summary:    "Retrieve a author",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
 				}},
 				"404": {Description: "Not found"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &goninja.Operation{
+		itemPathItem.Put = &openapi.Operation{
 			Summary:    "Update a author",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			RequestBody: &goninja.RequestBody{
+			Parameters: []openapi.Parameter{idParam},
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorRetrieve"}},
 				}},
 				"404": {Description: "Not found"},
 				"422": {Description: "Validation error"},
@@ -524,11 +529,11 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &goninja.Operation{
+		itemPathItem.Delete = &openapi.Operation{
 			Summary:    "Delete a author",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
 				"404": {Description: "Not found"},
 			},
@@ -543,13 +548,13 @@ func (r *AuthorResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gon
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// goninja.Configurer (plan section 5.3) customizes it, otherwise every
+// mw.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
-	if c, ok := r.Self().(goninja.Configurer); ok {
+func (r *AuthorResource) resourceConfig() mw.ResourceConfig {
+	if c, ok := r.Self().(mw.Configurer); ok {
 		return c.Config()
 	}
-	return goninja.ResourceConfig{}
+	return mw.ResourceConfig{}
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
@@ -557,7 +562,7 @@ func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// mw.MountWithConfig — see mw/config.go) combined with cfg's own AuthOverride; a
 // resource mounted via plain Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
