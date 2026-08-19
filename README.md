@@ -41,6 +41,19 @@ lines, no framework of its own to learn:
 
 ```go
 // main.go
+package main
+
+import (
+    "net/http"
+
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+
+    "github.com/caspel26/goninja"
+    "myapp/internal/api"
+    "myapp/models"
+)
+
 func main() {
     db, _ := gorm.Open(postgres.Open(dsn), &gorm.Config{})
     db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
@@ -195,6 +208,18 @@ embedded resource's `Self()` at it:
 
 ```go
 // resources.go — your file, never touched by the generator.
+package myapp
+
+import (
+    "context"
+    "log"
+
+    "gorm.io/gorm"
+
+    "github.com/caspel26/goninja"
+    "myapp/internal/api"
+)
+
 type authorWithAudit struct {
     *api.AuthorResource
 }
