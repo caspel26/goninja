@@ -2,6 +2,13 @@
   <img src="docs/logo/goninja-logo-full.png" alt="goninja" width="720">
 </p>
 
+<p align="center">
+  <a href="https://github.com/caspel26/goninja/actions/workflows/go.yml"><img src="https://github.com/caspel26/goninja/actions/workflows/go.yml/badge.svg" alt="Build Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/caspel26/goninja" alt="License"></a>
+  <img src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white" alt="Go version">
+  <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
+</p>
+
 Code-first Go framework for generating complete CRUD REST APIs from
 annotated structs: routing, input/output validation, serialization,
 OpenAPI, filters, pagination.
