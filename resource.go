@@ -33,13 +33,30 @@ func TxFromContext(ctx context.Context) (*gorm.DB, bool) {
 // which is transaction-aware: inside InTransaction, DB(ctx) returns the
 // active transaction rather than the base connection.
 type BaseResource struct {
-	db *gorm.DB
+	db          *gorm.DB
+	errorMapper ErrorMapper
 }
 
 // SetDB injects the base database connection. Called by the generated
 // New<Model>Resource constructor; not meant to be called directly by users.
 func (r *BaseResource) SetDB(db *gorm.DB) {
 	r.db = db
+}
+
+// SetErrorMapper overrides the ErrorMapper generated handlers use to
+// translate resource errors into HTTP responses. Optional — a resource with
+// none set falls back to DefaultErrorMapper (see ErrorMapper).
+func (r *BaseResource) SetErrorMapper(m ErrorMapper) {
+	r.errorMapper = m
+}
+
+// ErrorMapper returns the resource's configured ErrorMapper, or
+// DefaultErrorMapper if none was set via SetErrorMapper.
+func (r *BaseResource) ErrorMapper() ErrorMapper {
+	if r.errorMapper == nil {
+		return DefaultErrorMapper{}
+	}
+	return r.errorMapper
 }
 
 // DB returns the connection to use for this context: the enclosing
