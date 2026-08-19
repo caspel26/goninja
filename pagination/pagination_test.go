@@ -1,8 +1,10 @@
-package goninja
+package pagination
 
 import (
 	"net/url"
 	"testing"
+
+	"github.com/caspel26/goninja"
 )
 
 func TestParseLimitOffset(t *testing.T) {
@@ -60,8 +62,8 @@ func TestParseLimitOffset(t *testing.T) {
 				if err == nil {
 					t.Fatal("ParseLimitOffset: err = nil, want a BadRequest")
 				}
-				if _, ok := err.(BadRequest); !ok {
-					t.Errorf("ParseLimitOffset: err type = %T, want BadRequest", err)
+				if _, ok := err.(goninja.BadRequest); !ok {
+					t.Errorf("ParseLimitOffset: err type = %T, want goninja.BadRequest", err)
 				}
 				return
 			}

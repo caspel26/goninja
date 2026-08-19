@@ -1,4 +1,4 @@
-package goninja
+package openapi
 
 import (
 	"net/http"
@@ -6,9 +6,9 @@ import (
 )
 
 type fakeResource struct {
-	BaseResource
 	registered bool
 	path       string
+	excluded   bool
 }
 
 func (f *fakeResource) Register(mux *http.ServeMux) {
@@ -23,6 +23,8 @@ func (f *fakeResource) OpenAPI() (map[string]*PathItem, map[string]Schema) {
 			"Fake": {Type: "object"},
 		}
 }
+
+func (f *fakeResource) DocsExcluded() bool { return f.excluded }
 
 func TestAPI_AddAndSpec(t *testing.T) {
 	doc := NewAPI("Test API", "1.0.0")
@@ -73,8 +75,7 @@ func TestMount_NilDocSkipsOpenAPI(t *testing.T) {
 func TestMount_ExcludedFromDocs(t *testing.T) {
 	mux := http.NewServeMux()
 	doc := NewAPI("Test API", "1.0.0")
-	r := &fakeResource{path: "/fakes"}
-	r.ExcludeFromDocs()
+	r := &fakeResource{path: "/fakes", excluded: true}
 
 	Mount(mux, doc, r)
 
@@ -82,6 +83,6 @@ func TestMount_ExcludedFromDocs(t *testing.T) {
 		t.Error("Mount should still register an excluded resource's routes")
 	}
 	if _, ok := doc.Spec().Paths["/fakes"]; ok {
-		t.Error("Mount added an ExcludeFromDocs resource's fragment to doc, want it skipped")
+		t.Error("Mount added a DocsExcluded resource's fragment to doc, want it skipped")
 	}
 }

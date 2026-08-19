@@ -1,4 +1,7 @@
-package goninja
+// Package validate is Fase 7's split of goninja's `validate` struct-tag
+// driven input validation out of the root goninja package — it depends
+// only on goninja itself, for ValidationError.
+package validate
 
 import (
 	"errors"
@@ -6,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/caspel26/goninja"
 )
 
 // validatorInstance is shared across all Validate calls; the tag name func
@@ -38,7 +43,7 @@ func Validate(v any) error {
 			for _, fe := range verrs {
 				fields[fe.Field()] = fe.Tag()
 			}
-			return ValidationError{Fields: fields}
+			return goninja.ValidationError{Fields: fields}
 		}
 		return err
 	}

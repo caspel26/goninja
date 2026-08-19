@@ -1,6 +1,10 @@
-package goninja
+package validate
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/caspel26/goninja"
+)
 
 type validateFixture struct {
 	Name  string `json:"name" validate:"required,max=5"`
@@ -22,9 +26,9 @@ func TestValidate_ReturnsValidationErrorKeyedByJSONName(t *testing.T) {
 		t.Fatal("Validate: err = nil, want a ValidationError")
 	}
 
-	ve, ok := err.(ValidationError)
+	ve, ok := err.(goninja.ValidationError)
 	if !ok {
-		t.Fatalf("Validate: err type = %T, want ValidationError", err)
+		t.Fatalf("Validate: err type = %T, want goninja.ValidationError", err)
 	}
 
 	if tag, ok := ve.Fields["name"]; !ok || tag != "max" {

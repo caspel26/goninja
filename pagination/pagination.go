@@ -1,8 +1,13 @@
-package goninja
+// Package pagination is Fase 7's split of goninja's limit/offset parsing
+// and ListEnvelope wrapper out of the root goninja package — it depends
+// only on goninja itself, for BadRequest.
+package pagination
 
 import (
 	"net/url"
 	"strconv"
+
+	"github.com/caspel26/goninja"
 )
 
 // DefaultLimit is the page size generated List handlers use when the
@@ -22,7 +27,7 @@ func ParseLimitOffset(q url.Values) (limit, offset int, err error) {
 	if v := q.Get("limit"); v != "" {
 		n, convErr := strconv.Atoi(v)
 		if convErr != nil || n < 0 {
-			return 0, 0, BadRequest{Detail: "invalid limit"}
+			return 0, 0, goninja.BadRequest{Detail: "invalid limit"}
 		}
 		limit = n
 	}
@@ -33,7 +38,7 @@ func ParseLimitOffset(q url.Values) (limit, offset int, err error) {
 	if v := q.Get("offset"); v != "" {
 		n, convErr := strconv.Atoi(v)
 		if convErr != nil || n < 0 {
-			return 0, 0, BadRequest{Detail: "invalid offset"}
+			return 0, 0, goninja.BadRequest{Detail: "invalid offset"}
 		}
 		offset = n
 	}

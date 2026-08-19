@@ -1,4 +1,4 @@
-package goninja
+package id
 
 import "testing"
 

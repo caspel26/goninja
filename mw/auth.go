@@ -9,7 +9,7 @@
 // Config.Middleware (plan section 6 item 5), still to come. This file only
 // carries the user through the request; a resource that wants to require
 // one checks UserFromContext itself in the meantime.
-package goninja
+package mw
 
 import "context"
 

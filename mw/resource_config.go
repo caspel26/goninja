@@ -1,4 +1,4 @@
-package goninja
+package mw
 
 // ResourceConfig lets a resource wrapper customize how the generated
 // Register(mux) and OpenAPI() methods mount and document a resource's

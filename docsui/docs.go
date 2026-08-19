@@ -1,9 +1,17 @@
-package goninja
+// Package docsui renders a documentation viewer (Swagger UI or ReDoc,
+// both vendored/embedded — no external CDN) for an openapi.API's merged
+// document. Split out of the root goninja package (Fase 7 ad hoc
+// architectural change) since it only needs the openapi package, not the
+// whole runtime.
+package docsui
 
 import (
 	"embed"
+	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/caspel26/goninja/openapi"
 )
 
 // DocsUI renders a documentation viewer for a mounted OpenAPI document.
@@ -35,7 +43,7 @@ type DocsAsset struct {
 // "<path>/" is the page's actual base URL). ui selects the renderer —
 // pass SwaggerUI() or ReDoc() (both fully embedded, no external CDN) or
 // your own DocsUI; nil defaults to SwaggerUI().
-func MountDocs(mux *http.ServeMux, api *API, path string, ui DocsUI) {
+func MountDocs(mux *http.ServeMux, api *openapi.API, path string, ui DocsUI) {
 	if ui == nil {
 		ui = SwaggerUI()
 	}
@@ -43,7 +51,9 @@ func MountDocs(mux *http.ServeMux, api *API, path string, ui DocsUI) {
 	specPath := path + "/openapi.json"
 
 	mux.HandleFunc("GET "+specPath, func(w http.ResponseWriter, r *http.Request) {
-		RespondJSON(w, http.StatusOK, api.Spec())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(api.Spec())
 	})
 
 	for route, asset := range ui.Assets() {

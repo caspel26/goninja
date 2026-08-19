@@ -13,9 +13,19 @@
 // This is Fase 6 item 5, and the first thing that actually *enforces*
 // AuthOverride (resource_config.go) and gives WithUser/UserFromContext
 // (auth.go) a reason to exist beyond carrying a value through the request.
-package goninja
+//
+// Package mw is Fase 7's split of goninja's auth/config plumbing (Config,
+// AuthPolicy, ResourceConfig, AuthOverride, Configurer, User,
+// WithUser/UserFromContext, MountWithConfig) out of the root goninja
+// package — it depends only on openapi (for MountWithConfig's Resource/API
+// params), not on the rest of the runtime.
+package mw
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/caspel26/goninja/openapi"
+)
 
 // AuthPolicy is a global default auth policy: which routes ("list",
 // "retrieve", "create", "update", "delete") require auth by default, and
@@ -64,7 +74,7 @@ type Config struct {
 //	    Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 //	}
 //	goninja.MountWithConfig(mux, doc, cfg, taskResource, authorResource)
-func MountWithConfig(mux *http.ServeMux, doc *API, cfg Config, resources ...Resource) {
+func MountWithConfig(mux *http.ServeMux, doc *openapi.API, cfg Config, resources ...openapi.Resource) {
 	for _, r := range resources {
 		if x, ok := r.(interface{ SetConfig(Config) }); ok {
 			x.SetConfig(cfg)
@@ -73,7 +83,7 @@ func MountWithConfig(mux *http.ServeMux, doc *API, cfg Config, resources ...Reso
 		if doc == nil {
 			continue
 		}
-		if x, ok := r.(interface{ docsExcluded() bool }); ok && x.docsExcluded() {
+		if x, ok := r.(interface{ DocsExcluded() bool }); ok && x.DocsExcluded() {
 			continue
 		}
 		doc.Add(r)

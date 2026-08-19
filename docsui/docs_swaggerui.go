@@ -1,4 +1,4 @@
-package goninja
+package docsui
 
 import "embed"
 
@@ -8,24 +8,24 @@ import "embed"
 // package's own index.html/swagger-initializer.js are not vendored:
 // swaggerUI.Index writes its own, small enough to inline, so it can point
 // swagger-ui at this API's own /openapi.json path. See
-// docs/swagger-ui/LICENSE for swagger-ui's license.
+// swagger-ui/LICENSE for swagger-ui's license.
 //
-//go:embed docs/swagger-ui/swagger-ui-bundle.js docs/swagger-ui/swagger-ui-standalone-preset.js docs/swagger-ui/swagger-ui.css docs/swagger-ui/favicon-32x32.png
+//go:embed swagger-ui/swagger-ui-bundle.js swagger-ui/swagger-ui-standalone-preset.js swagger-ui/swagger-ui.css swagger-ui/favicon-32x32.png
 var swaggerUIAssets embed.FS
 
 type swaggerUI struct{}
 
 // SwaggerUI is a DocsUI backed by Swagger UI, vendored under
-// docs/swagger-ui and embedded at build time — the default MountDocs
-// falls back to when no DocsUI is given.
+// swagger-ui and embedded at build time — the default MountDocs falls
+// back to when no DocsUI is given.
 func SwaggerUI() DocsUI { return swaggerUI{} }
 
 func (swaggerUI) Assets() map[string]DocsAsset {
 	return map[string]DocsAsset{
-		"swagger-ui-bundle.js":            mustReadAsset(swaggerUIAssets, "docs/swagger-ui/swagger-ui-bundle.js", "application/javascript; charset=utf-8"),
-		"swagger-ui-standalone-preset.js": mustReadAsset(swaggerUIAssets, "docs/swagger-ui/swagger-ui-standalone-preset.js", "application/javascript; charset=utf-8"),
-		"swagger-ui.css":                  mustReadAsset(swaggerUIAssets, "docs/swagger-ui/swagger-ui.css", "text/css; charset=utf-8"),
-		"favicon-32x32.png":               mustReadAsset(swaggerUIAssets, "docs/swagger-ui/favicon-32x32.png", "image/png"),
+		"swagger-ui-bundle.js":            mustReadAsset(swaggerUIAssets, "swagger-ui/swagger-ui-bundle.js", "application/javascript; charset=utf-8"),
+		"swagger-ui-standalone-preset.js": mustReadAsset(swaggerUIAssets, "swagger-ui/swagger-ui-standalone-preset.js", "application/javascript; charset=utf-8"),
+		"swagger-ui.css":                  mustReadAsset(swaggerUIAssets, "swagger-ui/swagger-ui.css", "text/css; charset=utf-8"),
+		"favicon-32x32.png":               mustReadAsset(swaggerUIAssets, "swagger-ui/favicon-32x32.png", "image/png"),
 	}
 }
 
