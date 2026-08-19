@@ -46,16 +46,16 @@ can read, debug, and step through.
 ## Status
 
 `goninja` is early and not yet usable for real projects. The current
-prototype lives under [`internal/codegen`](internal/codegen) and
+engine lives under [`internal/codegen`](internal/codegen) and
 [`examples/prototype`](examples/prototype): it parses `goninja`-tagged
 struct fields and generates typed schemas, an in-memory store, and
-`net/http` handlers for a single example model, end to end.
+`net/http` handlers, end to end, for any number of models.
 
 Try it:
 
 ```console
 $ make generate-prototype   # writes examples/prototype/internal/api
-$ make run-prototype        # serves GET/POST /tasks, GET /tasks/{id} on :8080
+$ make run-prototype        # serves /tasks and /authors on :8080
 ```
 
 Real database support, validation, OpenAPI, filters/pagination, auth, and
