@@ -67,9 +67,21 @@ external CDN — and a caller can implement `DocsUI` itself for anything
 else. `BaseResource.SetOpenAPITags` (`resource.go`) overrides the OpenAPI
 tags a resource's generated `OpenAPI()` puts on every one of its
 operations (how a rendered UI groups its routes), defaulting to the model
-name when unset. Still not built: auth, hooks, config — those are
-Phase 6+. Don't over-build beyond what the current phase calls for
-without checking the plan.
+name when unset. Phase 6 has so far added: `hooks.go`'s
+`BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/`BeforeDeleteHook`
+optional interfaces, `BaseResource.SetSelf`/`Self()` (the dispatch point
+every wrapper-based extension — hooks, method overrides, config — resolves
+through), `create`/`update`/`delete` handlers running inside
+`goninja.InTransaction`, and `resource_config.go`'s `ResourceConfig`/
+`AuthOverride`/`Configurer` — a `Configurer` implemented on a `SetSelf`
+wrapper overrides a resource's mount path and/or restricts which routes
+`Register`/`OpenAPI()` emit (`Routes` is opt-in restriction: empty means
+every route). `AuthOverride` is additive-only by design (plan section
+5.3) and is plumbed through `ResourceConfig` already, but nothing enforces
+it yet — that's `Config.DefaultAuth`/`Config.Middleware`, still to come.
+Still not built: `WithUser`/`UserFromContext`, global default auth/
+middleware, relations nested-vs-by-id (plan §5.12). Don't over-build
+beyond what the current phase calls for without checking the plan.
 
 ## Commands
 
@@ -124,16 +136,22 @@ Three pieces:
      `goninja.Validate`) lives in the root `goninja` package and is called
      directly, so there's nothing to deduplicate across models.
 
-2. **root package `goninja`** (`resource.go`, `errors.go`, `validate.go`,
-   `mapper.go`, `pagination.go`, `id.go`, `openapi.go`, `docs.go`,
-   `docs_swaggerui.go`, `docs_redoc.go`) — the runtime support generated
-   code depends on: `BaseResource` (embedded by every generated
-   `<Model>Resource`), its transaction-aware `DB(ctx)`,
-   `InTransaction`/`WithTx`/`TxFromContext`; the error types
+2. **root package `goninja`** (`resource.go`, `hooks.go`,
+   `resource_config.go`, `errors.go`, `validate.go`, `mapper.go`,
+   `pagination.go`, `id.go`, `openapi.go`, `docs.go`, `docs_swaggerui.go`,
+   `docs_redoc.go`) — the runtime support generated code depends on:
+   `BaseResource` (embedded by every generated `<Model>Resource`), its
+   transaction-aware `DB(ctx)`, `InTransaction`/`WithTx`/`TxFromContext`,
+   and `SetSelf`/`Self()` (the dispatch point hooks, method overrides, and
+   `Configurer` all resolve through, since Go has no dynamic dispatch
+   through embedding — plan section 5.10); the error types
    `NotFound`/`ValidationError`/`BadRequest`; `Validate` (runs
    `go-playground/validator` against a Create/Update schema's `validate`
-   tags, returning `ValidationError` keyed by JSON field name); and
-   `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+   tags, returning `ValidationError` keyed by JSON field name);
+   `hooks.go`'s `BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/
+   `BeforeDeleteHook` optional interfaces (Phase 6); `resource_config.go`'s
+   `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section 5.3);
+   and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
    section 5.11) — a resource's `SetErrorMapper` overrides how its
    generated handlers turn an error into an HTTP response; unset falls
    back to `DefaultErrorMapper`. `openapi.go`'s `API`/`OpenAPIProvider`
@@ -252,3 +270,19 @@ hand-editing anything under `examples/prototype/internal/api`.
   specifically — `Mount` checks this via an unexported
   `docsExcluded() bool` method. See `examples/prototype/main.go`; README
   has screenshots of both UIs under `docs/screenshots/`.
+- A generated `<Model>Resource` also gets a `resourceConfig()` helper
+  (`model.go.tmpl`) resolving a `goninja.ResourceConfig` off `r.Self()`
+  when it implements `goninja.Configurer` (`resource_config.go`, plan
+  section 5.3), else `ResourceConfig{}` — same `SetSelf` dispatch as hooks.
+  Both `Register(mux)` and `OpenAPI()` read it: `cfg.PathOr("/<model>s")`
+  swaps the mount path (id routes append `/{id}` to whatever it resolves
+  to), and `cfg.RouteEnabled("list"|"retrieve"|"create"|"update"|"delete")`
+  gates which routes each method emits — `Routes` is opt-in restriction
+  (nil/empty means every route), not an enable list that must be spelled
+  out in full. `OpenAPI()` mirrors this exactly so the merged spec never
+  documents a route `Register` didn't actually mount. `ResourceConfig.Auth`
+  (`AuthOverride.AlsoProtect`/`Public`) is additive-only by design (a
+  per-resource override can only ever add protection relative to the
+  future global default, never silently remove it) and is threaded through
+  already, but nothing enforces it yet — that's `Config.DefaultAuth`/
+  `Config.Middleware`, still to come (plan §6 item 5).
