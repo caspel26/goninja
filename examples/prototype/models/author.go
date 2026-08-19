@@ -1,12 +1,11 @@
 package models
 
-// Author is the second prototype model, distinct in shape from Task
-// (different field count/types), used to prove the generator isn't
-// accidentally special-cased to a single struct — Phase 1 exit criterion
-// in goninja-implementation-plan.md.
+// Author is the second prototype model, distinct in shape from Task, used
+// to prove the generator isn't special-cased to a single struct (Phase 1
+// exit criterion). Book (below) references it as a relation, proving
+// automatic Preload on Retrieve (Phase 2 exit criterion).
 type Author struct {
-	ID        int64  `json:"id" goninja:"list,retrieve"`
-	Name      string `json:"name" goninja:"list,retrieve,create"`
-	Bio       string `json:"bio" goninja:"retrieve,create"`
-	BookCount int64  `json:"book_count" goninja:"list,retrieve"`
+	ID   int64  `gorm:"primaryKey" json:"id" goninja:"list,retrieve"`
+	Name string `json:"name" goninja:"list,retrieve,create,update"`
+	Bio  string `json:"bio" goninja:"retrieve,create,update"`
 }

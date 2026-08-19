@@ -3,9 +3,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"sync"
+
+	"github.com/caspel26/goninja"
+	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
@@ -18,6 +22,10 @@ type TaskListSchema struct {
 }
 
 // TaskRetrieveSchema is the shape returned by GET /tasks/{id}.
+// A relation field (e.g. Author) is nested as that model's own
+// RetrieveSchema, never the raw related struct — output schemas are
+// always separate from the model, so a sensitive field can't leak into a
+// response just because it exists on the related struct either.
 type TaskRetrieveSchema struct {
 	ID    int64  `json:"id"`
 	Title string `json:"title"`
@@ -30,42 +38,10 @@ type TaskCreateSchema struct {
 	Done  bool   `json:"done"`
 }
 
-// TaskStore is an in-memory, mutex-guarded store standing in for
-// a real ORM-backed resource — Phase 0 explicitly has no ORM.
-type TaskStore struct {
-	mu     sync.RWMutex
-	nextID int64
-	items  map[int64]*models.Task
-}
-
-func NewTaskStore() *TaskStore {
-	return &TaskStore{items: make(map[int64]*models.Task)}
-}
-
-func (s *TaskStore) list() []*models.Task {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]*models.Task, 0, len(s.items))
-	for _, v := range s.items {
-		out = append(out, v)
-	}
-	return out
-}
-
-func (s *TaskStore) get(id int64) (*models.Task, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	v, ok := s.items[id]
-	return v, ok
-}
-
-func (s *TaskStore) create(v *models.Task) *models.Task {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nextID++
-	v.ID = s.nextID
-	s.items[v.ID] = v
-	return v
+// TaskUpdateSchema is the shape accepted by PUT /tasks/{id}.
+type TaskUpdateSchema struct {
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
 }
 
 func toTaskListSchema(m *models.Task) TaskListSchema {
@@ -84,22 +60,95 @@ func toTaskRetrieveSchema(m *models.Task) TaskRetrieveSchema {
 	}
 }
 
-// TaskResource wires the in-memory store to net/http handlers.
+// TaskResource is the generated GORM-backed CRUD resource for
+// Task. Embeds goninja.BaseResource for a transaction-aware
+// DB(ctx).
 type TaskResource struct {
-	Store *TaskStore
+	goninja.BaseResource
 }
 
-func NewTaskResource() *TaskResource {
-	return &TaskResource{Store: NewTaskStore()}
+// NewTaskResource builds a TaskResource bound to db.
+func NewTaskResource(db *gorm.DB) *TaskResource {
+	r := &TaskResource{}
+	r.SetDB(db)
+	return r
+}
+
+func (r *TaskResource) List(ctx context.Context) ([]TaskListSchema, error) {
+	var items []models.Task
+	if err := r.DB(ctx).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	out := make([]TaskListSchema, 0, len(items))
+	for i := range items {
+		out = append(out, toTaskListSchema(&items[i]))
+	}
+	return out, nil
+}
+
+// Retrieve preloads every relation field carried on the retrieve schema —
+// list never does, by construction, which is why list/retrieve are
+// separate tags (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *TaskResource) Retrieve(ctx context.Context, id int64) (*TaskRetrieveSchema, error) {
+	q := r.DB(ctx)
+
+	var m models.Task
+	if err := q.First(&m, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "task", ID: id}
+		}
+		return nil, err
+	}
+	out := toTaskRetrieveSchema(&m)
+	return &out, nil
+}
+
+func (r *TaskResource) Create(ctx context.Context, in TaskCreateSchema) (*TaskRetrieveSchema, error) {
+	m := models.Task{
+		Title: in.Title,
+		Done:  in.Done,
+	}
+	if err := r.DB(ctx).Create(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, m.ID)
+}
+
+func (r *TaskResource) Update(ctx context.Context, id int64, in TaskUpdateSchema) (*TaskRetrieveSchema, error) {
+	var m models.Task
+	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "task", ID: id}
+		}
+		return nil, err
+	}
+	m.Title = in.Title
+	m.Done = in.Done
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
+func (r *TaskResource) Delete(ctx context.Context, id int64) error {
+	res := r.DB(ctx).Delete(&models.Task{}, id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return goninja.NotFound{Resource: "task", ID: id}
+	}
+	return nil
 }
 
 func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items := r.Store.list()
-	out := make([]TaskListSchema, 0, len(items))
-	for _, m := range items {
-		out = append(out, toTaskListSchema(m))
+	items, err := r.List(req.Context())
+	if err != nil {
+		mapError(w, err)
+		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
@@ -108,12 +157,12 @@ func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	m, ok := r.Store.get(id)
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+	out, err := r.Retrieve(req.Context(), id)
+	if err != nil {
+		mapError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toTaskRetrieveSchema(m))
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
@@ -122,18 +171,52 @@ func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	m := &models.Task{
-		Title: in.Title,
-		Done:  in.Done,
+	out, err := r.Create(req.Context(), in)
+	if err != nil {
+		mapError(w, err)
+		return
 	}
-	created := r.Store.create(m)
-	writeJSON(w, http.StatusCreated, toTaskRetrieveSchema(created))
+	writeJSON(w, http.StatusCreated, out)
 }
 
-// Register mounts list/retrieve/create routes for Task under
-// /tasks on mux.
+func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
+	id, err := idFromPath(req.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var in TaskUpdateSchema
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	out, err := r.Update(req.Context(), id, in)
+	if err != nil {
+		mapError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
+	id, err := idFromPath(req.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := r.Delete(req.Context(), id); err != nil {
+		mapError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Register mounts list/retrieve/create/update/delete routes for
+// Task under /tasks on mux.
 func (r *TaskResource) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /tasks", r.listHandler)
 	mux.HandleFunc("POST /tasks", r.createHandler)
 	mux.HandleFunc("GET /tasks/{id}", r.retrieveHandler)
+	mux.HandleFunc("PUT /tasks/{id}", r.updateHandler)
+	mux.HandleFunc("DELETE /tasks/{id}", r.deleteHandler)
 }

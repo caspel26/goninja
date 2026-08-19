@@ -3,26 +3,32 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"sync"
+
+	"github.com/caspel26/goninja"
+	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
 // AuthorListSchema is the shape returned by GET /authors.
 type AuthorListSchema struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	BookCount int64  `json:"book_count"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // AuthorRetrieveSchema is the shape returned by GET /authors/{id}.
+// A relation field (e.g. Author) is nested as that model's own
+// RetrieveSchema, never the raw related struct — output schemas are
+// always separate from the model, so a sensitive field can't leak into a
+// response just because it exists on the related struct either.
 type AuthorRetrieveSchema struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Bio       string `json:"bio"`
-	BookCount int64  `json:"book_count"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Bio  string `json:"bio"`
 }
 
 // AuthorCreateSchema is the shape accepted by POST /authors.
@@ -31,77 +37,116 @@ type AuthorCreateSchema struct {
 	Bio  string `json:"bio"`
 }
 
-// AuthorStore is an in-memory, mutex-guarded store standing in for
-// a real ORM-backed resource — Phase 0 explicitly has no ORM.
-type AuthorStore struct {
-	mu     sync.RWMutex
-	nextID int64
-	items  map[int64]*models.Author
-}
-
-func NewAuthorStore() *AuthorStore {
-	return &AuthorStore{items: make(map[int64]*models.Author)}
-}
-
-func (s *AuthorStore) list() []*models.Author {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]*models.Author, 0, len(s.items))
-	for _, v := range s.items {
-		out = append(out, v)
-	}
-	return out
-}
-
-func (s *AuthorStore) get(id int64) (*models.Author, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	v, ok := s.items[id]
-	return v, ok
-}
-
-func (s *AuthorStore) create(v *models.Author) *models.Author {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nextID++
-	v.ID = s.nextID
-	s.items[v.ID] = v
-	return v
+// AuthorUpdateSchema is the shape accepted by PUT /authors/{id}.
+type AuthorUpdateSchema struct {
+	Name string `json:"name"`
+	Bio  string `json:"bio"`
 }
 
 func toAuthorListSchema(m *models.Author) AuthorListSchema {
 	return AuthorListSchema{
-		ID:        m.ID,
-		Name:      m.Name,
-		BookCount: m.BookCount,
+		ID:   m.ID,
+		Name: m.Name,
 	}
 }
 
 func toAuthorRetrieveSchema(m *models.Author) AuthorRetrieveSchema {
 	return AuthorRetrieveSchema{
-		ID:        m.ID,
-		Name:      m.Name,
-		Bio:       m.Bio,
-		BookCount: m.BookCount,
+		ID:   m.ID,
+		Name: m.Name,
+		Bio:  m.Bio,
 	}
 }
 
-// AuthorResource wires the in-memory store to net/http handlers.
+// AuthorResource is the generated GORM-backed CRUD resource for
+// Author. Embeds goninja.BaseResource for a transaction-aware
+// DB(ctx).
 type AuthorResource struct {
-	Store *AuthorStore
+	goninja.BaseResource
 }
 
-func NewAuthorResource() *AuthorResource {
-	return &AuthorResource{Store: NewAuthorStore()}
+// NewAuthorResource builds a AuthorResource bound to db.
+func NewAuthorResource(db *gorm.DB) *AuthorResource {
+	r := &AuthorResource{}
+	r.SetDB(db)
+	return r
+}
+
+func (r *AuthorResource) List(ctx context.Context) ([]AuthorListSchema, error) {
+	var items []models.Author
+	if err := r.DB(ctx).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	out := make([]AuthorListSchema, 0, len(items))
+	for i := range items {
+		out = append(out, toAuthorListSchema(&items[i]))
+	}
+	return out, nil
+}
+
+// Retrieve preloads every relation field carried on the retrieve schema —
+// list never does, by construction, which is why list/retrieve are
+// separate tags (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *AuthorResource) Retrieve(ctx context.Context, id int64) (*AuthorRetrieveSchema, error) {
+	q := r.DB(ctx)
+
+	var m models.Author
+	if err := q.First(&m, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "author", ID: id}
+		}
+		return nil, err
+	}
+	out := toAuthorRetrieveSchema(&m)
+	return &out, nil
+}
+
+func (r *AuthorResource) Create(ctx context.Context, in AuthorCreateSchema) (*AuthorRetrieveSchema, error) {
+	m := models.Author{
+		Name: in.Name,
+		Bio:  in.Bio,
+	}
+	if err := r.DB(ctx).Create(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, m.ID)
+}
+
+func (r *AuthorResource) Update(ctx context.Context, id int64, in AuthorUpdateSchema) (*AuthorRetrieveSchema, error) {
+	var m models.Author
+	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "author", ID: id}
+		}
+		return nil, err
+	}
+	m.Name = in.Name
+	m.Bio = in.Bio
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
+func (r *AuthorResource) Delete(ctx context.Context, id int64) error {
+	res := r.DB(ctx).Delete(&models.Author{}, id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return goninja.NotFound{Resource: "author", ID: id}
+	}
+	return nil
 }
 
 func (r *AuthorResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items := r.Store.list()
-	out := make([]AuthorListSchema, 0, len(items))
-	for _, m := range items {
-		out = append(out, toAuthorListSchema(m))
+	items, err := r.List(req.Context())
+	if err != nil {
+		mapError(w, err)
+		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (r *AuthorResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
@@ -110,12 +155,12 @@ func (r *AuthorResource) retrieveHandler(w http.ResponseWriter, req *http.Reques
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	m, ok := r.Store.get(id)
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
+	out, err := r.Retrieve(req.Context(), id)
+	if err != nil {
+		mapError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAuthorRetrieveSchema(m))
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (r *AuthorResource) createHandler(w http.ResponseWriter, req *http.Request) {
@@ -124,18 +169,52 @@ func (r *AuthorResource) createHandler(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	m := &models.Author{
-		Name: in.Name,
-		Bio:  in.Bio,
+	out, err := r.Create(req.Context(), in)
+	if err != nil {
+		mapError(w, err)
+		return
 	}
-	created := r.Store.create(m)
-	writeJSON(w, http.StatusCreated, toAuthorRetrieveSchema(created))
+	writeJSON(w, http.StatusCreated, out)
 }
 
-// Register mounts list/retrieve/create routes for Author under
-// /authors on mux.
+func (r *AuthorResource) updateHandler(w http.ResponseWriter, req *http.Request) {
+	id, err := idFromPath(req.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var in AuthorUpdateSchema
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	out, err := r.Update(req.Context(), id, in)
+	if err != nil {
+		mapError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
+	id, err := idFromPath(req.URL.Path)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := r.Delete(req.Context(), id); err != nil {
+		mapError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Register mounts list/retrieve/create/update/delete routes for
+// Author under /authors on mux.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /authors", r.listHandler)
 	mux.HandleFunc("POST /authors", r.createHandler)
 	mux.HandleFunc("GET /authors/{id}", r.retrieveHandler)
+	mux.HandleFunc("PUT /authors/{id}", r.updateHandler)
+	mux.HandleFunc("DELETE /authors/{id}", r.deleteHandler)
 }
