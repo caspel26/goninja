@@ -9,6 +9,10 @@
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
 
+<p align="center">
+  <b>Generate typed, validated REST APIs from annotated Go structs — no reflection, no runtime magic.</b>
+</p>
+
 Code-first Go framework for generating complete CRUD REST APIs from
 annotated structs: routing, input/output validation, serialization,
 OpenAPI, filters, pagination.
