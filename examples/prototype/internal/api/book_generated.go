@@ -540,86 +540,130 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		Schema:   goninja.Schema{Type: "string"},
 	}
 
-	paths := map[string]*goninja.PathItem{
-		"/books": {
-			Get: &goninja.Operation{
-				Summary:    "List books",
-				Tags:       tags,
-				Parameters: listParams,
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
-					}},
+	cfg := r.resourceConfig()
+	basePath := cfg.PathOr("/books")
+	itemPath := basePath + "/{id}"
+
+	paths := map[string]*goninja.PathItem{}
+
+	basePathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("list") {
+		basePathItem.Get = &goninja.Operation{
+			Summary:    "List books",
+			Tags:       tags,
+			Parameters: listParams,
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
+				}},
+			},
+		}
+	}
+	if cfg.RouteEnabled("create") {
+		basePathItem.Post = &goninja.Operation{
+			Summary: "Create a book",
+			Tags:    tags,
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookCreate"}},
 				},
 			},
-			Post: &goninja.Operation{
-				Summary: "Create a book",
-				Tags:    tags,
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookCreate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"201": {Description: "Created", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
-					}},
-					"422": {Description: "Validation error"},
+			Responses: map[string]goninja.Response{
+				"201": {Description: "Created", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+				}},
+				"422": {Description: "Validation error"},
+			},
+		}
+	}
+	if basePathItem.Get != nil || basePathItem.Post != nil {
+		paths[basePath] = basePathItem
+	}
+
+	itemPathItem := &goninja.PathItem{}
+	if cfg.RouteEnabled("retrieve") {
+		itemPathItem.Get = &goninja.Operation{
+			Summary:    "Retrieve a book",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+			},
+		}
+	}
+	if cfg.RouteEnabled("update") {
+		itemPathItem.Put = &goninja.Operation{
+			Summary:    "Update a book",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			RequestBody: &goninja.RequestBody{
+				Required: true,
+				Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookUpdate"}},
 				},
 			},
-		},
-		"/books/{id}": {
-			Get: &goninja.Operation{
-				Summary:    "Retrieve a book",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-				},
+			Responses: map[string]goninja.Response{
+				"200": {Description: "OK", Content: map[string]goninja.MediaType{
+					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+				}},
+				"404": {Description: "Not found"},
+				"422": {Description: "Validation error"},
 			},
-			Put: &goninja.Operation{
-				Summary:    "Update a book",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				RequestBody: &goninja.RequestBody{
-					Required: true,
-					Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookUpdate"}},
-					},
-				},
-				Responses: map[string]goninja.Response{
-					"200": {Description: "OK", Content: map[string]goninja.MediaType{
-						"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
-					}},
-					"404": {Description: "Not found"},
-					"422": {Description: "Validation error"},
-				},
+		}
+	}
+	if cfg.RouteEnabled("delete") {
+		itemPathItem.Delete = &goninja.Operation{
+			Summary:    "Delete a book",
+			Tags:       tags,
+			Parameters: []goninja.Parameter{idParam},
+			Responses: map[string]goninja.Response{
+				"204": {Description: "No content"},
+				"404": {Description: "Not found"},
 			},
-			Delete: &goninja.Operation{
-				Summary:    "Delete a book",
-				Tags:       tags,
-				Parameters: []goninja.Parameter{idParam},
-				Responses: map[string]goninja.Response{
-					"204": {Description: "No content"},
-					"404": {Description: "Not found"},
-				},
-			},
-		},
+		}
+	}
+	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
+		paths[itemPath] = itemPathItem
 	}
 
 	return paths, schemas
 }
 
+// resourceConfig resolves r's ResourceConfig via r.Self(), the same
+// dispatch hooks.go and ops() use: a wrapper implementing
+// goninja.Configurer (plan section 5.3) customizes it, otherwise every
+// generated default applies.
+func (r *BookResource) resourceConfig() goninja.ResourceConfig {
+	if c, ok := r.Self().(goninja.Configurer); ok {
+		return c.Config()
+	}
+	return goninja.ResourceConfig{}
+}
+
 // Register mounts list/retrieve/create/update/delete routes for
-// Book under /books on mux.
+// Book under /books on mux, or under r's
+// ResourceConfig.Path/Routes override (see resourceConfig above) if one is
+// set.
 func (r *BookResource) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /books", r.listHandler)
-	mux.HandleFunc("POST /books", r.createHandler)
-	mux.HandleFunc("GET /books/{id}", r.retrieveHandler)
-	mux.HandleFunc("PUT /books/{id}", r.updateHandler)
-	mux.HandleFunc("DELETE /books/{id}", r.deleteHandler)
+	cfg := r.resourceConfig()
+	path := cfg.PathOr("/books")
+	if cfg.RouteEnabled("list") {
+		mux.HandleFunc("GET "+path, r.listHandler)
+	}
+	if cfg.RouteEnabled("create") {
+		mux.HandleFunc("POST "+path, r.createHandler)
+	}
+	if cfg.RouteEnabled("retrieve") {
+		mux.HandleFunc("GET "+path+"/{id}", r.retrieveHandler)
+	}
+	if cfg.RouteEnabled("update") {
+		mux.HandleFunc("PUT "+path+"/{id}", r.updateHandler)
+	}
+	if cfg.RouteEnabled("delete") {
+		mux.HandleFunc("DELETE "+path+"/{id}", r.deleteHandler)
+	}
 }

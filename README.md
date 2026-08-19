@@ -217,6 +217,27 @@ ones you need. The same `SetSelf` wiring also makes an overridden
 `Retrieve`/`List`/`Update`/`Delete` method take effect, e.g. to add
 caching in front of the generated query without forking it.
 
+### Custom path and restricted routes
+
+The same `SetSelf` wrapper can implement `goninja.Configurer` to override
+the resource's mount path or drop routes it shouldn't expose — both
+`Register(mux)` and the generated OpenAPI fragment pick this up:
+
+```go
+func (r *authorWithAudit) Config() goninja.ResourceConfig {
+    return goninja.ResourceConfig{
+        Path:   "/v1/authors", // default would be "/authors"
+        Routes: []string{"list", "retrieve"}, // no create/update/delete
+    }
+}
+```
+
+`Routes` is opt-in restriction, not a list you must spell out in full —
+leave it unset (or nil) to keep every route. `ResourceConfig` also carries
+an additive-only `Auth` override (`AuthOverride.AlsoProtect`/`Public`) for
+the global default auth landing in a later phase; it's plumbed through
+today but nothing enforces it yet.
+
 ## Contributing
 
 The project is pre-alpha; the implementation plan is the source of truth
