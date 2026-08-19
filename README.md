@@ -50,7 +50,8 @@ engine lives under [`internal/codegen`](internal/codegen) and
 [`examples/prototype`](examples/prototype): it parses `goninja`-tagged
 struct fields and generates typed schemas plus GORM-backed CRUD (`net/http`
 handlers, transaction-aware queries, automatic preloading of relations on
-retrieve) for any number of models, verified end to end against Postgres.
+retrieve, `validate`-tag-driven input validation with per-field 422
+responses) for any number of models, verified end to end against Postgres.
 
 Try it (needs a running Postgres):
 
@@ -60,9 +61,8 @@ $ make generate-prototype   # writes examples/prototype/internal/api
 $ make run-prototype        # serves /tasks, /authors, /books on :8080
 ```
 
-Validation, OpenAPI, filters/pagination, auth, and hooks are designed but
-not yet built. Follow progress in
-[goninja-implementation-plan.md](goninja-implementation-plan.md).
+OpenAPI, filters/pagination, auth, and hooks are designed but not yet
+built.
 
 ## Contributing
 
