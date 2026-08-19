@@ -681,3 +681,18 @@ hand-rolled type, proving it end to end; test coverage on the new file is
 100% (`authenticators_test.go`, table-driven to stay under SonarQube's
 cognitive-complexity threshold — the same threshold that earlier forced
 `resource_test.go`'s `TestBaseResource_Protect` to split in two).
+
+**Same-day follow-up: `goninja.RegisterValidation` (`validate.go`).** The
+user asked whether `goninja.Validate` (the tag-based struct validation
+called directly by generated `Create`/`Update` handlers) can be
+overridden. It can't — unlike hooks, it isn't dispatched through
+`Self()` — but the real gap underneath the question was that goninja
+exposed no way to add a custom `validate:"..."` tag beyond what
+`go-playground/validator` ships built in. `RegisterValidation(tag string,
+fn validator.Func) error` forwards directly to the shared
+`validatorInstance`'s own `RegisterValidation` — the library's own
+mechanism for this, called once at startup before serving traffic, after
+which every generated `Create`/`Update`'s `Validate` call recognizes the
+new tag with no per-resource wiring. 100% coverage
+(`validate_test.go`'s `TestRegisterValidation_CustomTagIsUsedByValidate`).
+README gained a "Custom validation tags" subsection documenting it.

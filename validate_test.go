@@ -2,6 +2,8 @@ package goninja
 
 import (
 	"testing"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type validateFixture struct {
@@ -54,6 +56,34 @@ func TestValidate_FallsBackToGoFieldNameWithoutJSONTag(t *testing.T) {
 
 	if tag, ok := ve.Fields["Age"]; !ok || tag != "required" {
 		t.Errorf(`Fields["Age"] = %q, ok=%v, want "required", ok=true`, tag, ok)
+	}
+}
+
+type validateFixtureCustomTag struct {
+	Code string `json:"code" validate:"oddlen"`
+}
+
+func TestRegisterValidation_CustomTagIsUsedByValidate(t *testing.T) {
+	if err := RegisterValidation("oddlen", func(fl validator.FieldLevel) bool {
+		return len(fl.Field().String())%2 == 1
+	}); err != nil {
+		t.Fatalf("RegisterValidation: unexpected error: %v", err)
+	}
+
+	if err := Validate(validateFixtureCustomTag{Code: "abc"}); err != nil {
+		t.Errorf("Validate: unexpected error for odd-length code: %v", err)
+	}
+
+	err := Validate(validateFixtureCustomTag{Code: "abcd"})
+	if err == nil {
+		t.Fatal("Validate: err = nil, want a ValidationError for even-length code")
+	}
+	ve, ok := err.(ValidationError)
+	if !ok {
+		t.Fatalf("Validate: err type = %T, want goninja.ValidationError", err)
+	}
+	if tag, ok := ve.Fields["code"]; !ok || tag != "oddlen" {
+		t.Errorf(`Fields["code"] = %q, ok=%v, want "oddlen", ok=true`, tag, ok)
 	}
 }
 
