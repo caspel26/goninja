@@ -91,7 +91,11 @@ func (r *BaseResource) ExcludeFromDocs() {
 	r.excludedFromDocs = true
 }
 
-func (r *BaseResource) docsExcluded() bool {
+// DocsExcluded reports whether ExcludeFromDocs was called — checked by
+// openapi.Mount (a different package than BaseResource) via a structural
+// interface. Go's unexported-method interface satisfaction is
+// package-scoped, so this must be exported to be visible there.
+func (r *BaseResource) DocsExcluded() bool {
 	return r.excludedFromDocs
 }
 

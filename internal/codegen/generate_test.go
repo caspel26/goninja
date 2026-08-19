@@ -151,7 +151,7 @@ func TestGenerate_FiltersAndUUID(t *testing.T) {
 		"PriceMax *float64",
 		"func (r *WidgetResource) List(ctx context.Context, f WidgetFilters) ([]WidgetList, int64, error)",
 		"func (r *WidgetResource) Retrieve(ctx context.Context, id string) (*WidgetRetrieve, error)",
-		"m.ID = goninja.NewUUID()",
+		"m.ID = id.NewUUID()",
 		"goninja.ListEnvelope[WidgetList]",
 	} {
 		if !strings.Contains(got, want) {

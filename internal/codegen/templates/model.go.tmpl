@@ -16,6 +16,10 @@ import (
 {{- end}}
 
 	"github.com/caspel26/goninja"
+{{- if eq .Model.IDGoType "string"}}
+	"github.com/caspel26/goninja/id"
+{{- end}}
+	"github.com/caspel26/goninja/openapi"
 	"gorm.io/gorm"
 
 	"{{.ModelsImport}}"
@@ -260,7 +264,7 @@ func (r *{{.Model.Name}}Resource) Create(ctx context.Context, in {{.Model.Name}}
 	}
 {{- if eq $idType "string"}}
 	if m.ID == "" {
-		m.ID = goninja.NewUUID()
+		m.ID = id.NewUUID()
 	}
 {{- end}}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
@@ -495,18 +499,18 @@ func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http
 // (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
 // paths reference, built from the same IR as the rest of this file, so
 // they always match what List/Retrieve/Create/Update actually accept and
-// return. Pass this resource to an goninja.API's Add method (alongside its
-// Register(mux) call) to merge it in; see goninja.MountDocs.
-func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+// return. Pass this resource to an openapi.API's Add method (alongside its
+// Register(mux) call) to merge it in; see docsui.MountDocs.
+func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
 		tags = []string{"{{.Model.Name}}"}
 	}
 
-	schemas := map[string]goninja.Schema{
+	schemas := map[string]openapi.Schema{
 		"{{.Model.Name}}List": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 			{{- range .Model.ListFields}}
 				"{{.JSONName}}": {{if .IsRelation}}{Ref: "#/components/schemas/{{.GoType}}Retrieve"}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
 			{{- end}}
@@ -514,7 +518,7 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		},
 		"{{.Model.Name}}Retrieve": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 			{{- range .Model.RetrieveFields}}
 				"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}": {{if .IsRelation}}{{if .IsByID}}{Type: "{{.RelatedIDOpenAPIType}}"{{if .RelatedIDOpenAPIFormat}}, Format: "{{.RelatedIDOpenAPIFormat}}"{{end}}}{{else}}{Ref: "#/components/schemas/{{.GoType}}Retrieve"}{{end}}{{else}}{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}{{end}},
 			{{- end}}
@@ -522,7 +526,7 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		},
 		"{{.Model.Name}}Create": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 			{{- range .Model.CreateFields}}
 				"{{.JSONName}}": {Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}},
 			{{- end}}
@@ -533,7 +537,7 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		},
 		"{{.Model.Name}}Update": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 			{{- range .Model.UpdateFields}}
 				"{{.JSONName}}": {Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}},
 			{{- end}}
@@ -544,8 +548,8 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		},
 		"{{.Model.Name}}ListEnvelope": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
-				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}List"}},
+			Properties: map[string]openapi.Schema{
+				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}List"}},
 				"total":  {Type: "integer", Format: "int64"},
 				"limit":  {Type: "integer"},
 				"offset": {Type: "integer"},
@@ -553,58 +557,58 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		},
 	}
 
-	listParams := []goninja.Parameter{
+	listParams := []openapi.Parameter{
 	{{- range .Model.FilterFields}}
-		{Name: "{{.JSONName}}", In: "query", Schema: goninja.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
+		{Name: "{{.JSONName}}", In: "query", Schema: openapi.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
 	{{- if .IsNumeric}}
-		{Name: "{{.JSONName}}_min", In: "query", Schema: goninja.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
-		{Name: "{{.JSONName}}_max", In: "query", Schema: goninja.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
+		{Name: "{{.JSONName}}_min", In: "query", Schema: openapi.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
+		{Name: "{{.JSONName}}_max", In: "query", Schema: openapi.Schema{Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}}},
 	{{- end}}
 	{{- end}}
-		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},
 	}
 
-	idParam := goninja.Parameter{
+	idParam := openapi.Parameter{
 		Name:     "id",
 		In:       "path",
 		Required: true,
-		Schema:   goninja.Schema{Type: "{{if eq .Model.IDGoType "int64"}}integer{{else}}string{{end}}"{{if eq .Model.IDGoType "int64"}}, Format: "int64"{{end}}},
+		Schema:   openapi.Schema{Type: "{{if eq .Model.IDGoType "int64"}}integer{{else}}string{{end}}"{{if eq .Model.IDGoType "int64"}}, Format: "int64"{{end}}},
 	}
 
 	cfg := r.resourceConfig()
 	basePath := cfg.PathOr("/{{.Model.NameLower}}s")
 	itemPath := basePath + "/{id}"
 
-	paths := map[string]*goninja.PathItem{}
+	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &goninja.PathItem{}
+	basePathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &goninja.Operation{
+		basePathItem.Get = &openapi.Operation{
 			Summary:    "List {{.Model.NameLower}}s",
 			Tags:       tags,
 			Parameters: listParams,
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}ListEnvelope"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}ListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &goninja.Operation{
+		basePathItem.Post = &openapi.Operation{
 			Summary: "Create a {{.Model.NameLower}}",
 			Tags:    tags,
-			RequestBody: &goninja.RequestBody{
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}Create"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Create"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"201": {Description: "Created", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+			Responses: map[string]openapi.Response{
+				"201": {Description: "Created", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
 				}},
 				"422": {Description: "Validation error"},
 			},
@@ -614,34 +618,34 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		paths[basePath] = basePathItem
 	}
 
-	itemPathItem := &goninja.PathItem{}
+	itemPathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &goninja.Operation{
+		itemPathItem.Get = &openapi.Operation{
 			Summary:    "Retrieve a {{.Model.NameLower}}",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
 				}},
 				"404": {Description: "Not found"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &goninja.Operation{
+		itemPathItem.Put = &openapi.Operation{
 			Summary:    "Update a {{.Model.NameLower}}",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			RequestBody: &goninja.RequestBody{
+			Parameters: []openapi.Parameter{idParam},
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}Update"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Update"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
 				}},
 				"404": {Description: "Not found"},
 				"422": {Description: "Validation error"},
@@ -649,11 +653,11 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*goninja.PathItem, map[s
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &goninja.Operation{
+		itemPathItem.Delete = &openapi.Operation{
 			Summary:    "Delete a {{.Model.NameLower}}",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
 				"404": {Description: "Not found"},
 			},
@@ -682,8 +686,8 @@ func (r *{{.Model.Name}}Resource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *{{.Model.Name}}Resource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

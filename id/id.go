@@ -1,4 +1,7 @@
-package goninja
+// Package id is Fase 7's split of goninja's UUID-generation helper out of
+// the root goninja package — fully standalone, no dependency on the rest
+// of the runtime.
+package id
 
 import "github.com/google/uuid"
 

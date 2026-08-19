@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/caspel26/goninja"
+	"github.com/caspel26/goninja/id"
+	"github.com/caspel26/goninja/openapi"
 	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja/examples/prototype/models"
@@ -239,7 +241,7 @@ func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve
 		Published: in.Published,
 	}
 	if m.ID == "" {
-		m.ID = goninja.NewUUID()
+		m.ID = id.NewUUID()
 	}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
@@ -463,18 +465,18 @@ func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 // (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
 // paths reference, built from the same IR as the rest of this file, so
 // they always match what List/Retrieve/Create/Update actually accept and
-// return. Pass this resource to an goninja.API's Add method (alongside its
-// Register(mux) call) to merge it in; see goninja.MountDocs.
-func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]goninja.Schema) {
+// return. Pass this resource to an openapi.API's Add method (alongside its
+// Register(mux) call) to merge it in; see docsui.MountDocs.
+func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
 		tags = []string{"Book"}
 	}
 
-	schemas := map[string]goninja.Schema{
+	schemas := map[string]openapi.Schema{
 		"BookList": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"id":         {Type: "string"},
 				"title":      {Type: "string"},
 				"author_id":  {Type: "string"},
@@ -485,7 +487,7 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		},
 		"BookRetrieve": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"id":         {Type: "string"},
 				"title":      {Type: "string"},
 				"author_id":  {Type: "string"},
@@ -497,7 +499,7 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		},
 		"BookCreate": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"title":     {Type: "string"},
 				"author_id": {Type: "string"},
 				"price":     {Type: "number", Format: "double"},
@@ -507,7 +509,7 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		},
 		"BookUpdate": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
+			Properties: map[string]openapi.Schema{
 				"title":     {Type: "string"},
 				"author_id": {Type: "string"},
 				"price":     {Type: "number", Format: "double"},
@@ -517,8 +519,8 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		},
 		"BookListEnvelope": {
 			Type: "object",
-			Properties: map[string]goninja.Schema{
-				"items":  {Type: "array", Items: &goninja.Schema{Ref: "#/components/schemas/BookList"}},
+			Properties: map[string]openapi.Schema{
+				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookList"}},
 				"total":  {Type: "integer", Format: "int64"},
 				"limit":  {Type: "integer"},
 				"offset": {Type: "integer"},
@@ -526,56 +528,56 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		},
 	}
 
-	listParams := []goninja.Parameter{
-		{Name: "author_id", In: "query", Schema: goninja.Schema{Type: "string"}},
-		{Name: "price", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
-		{Name: "price_min", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
-		{Name: "price_max", In: "query", Schema: goninja.Schema{Type: "number", Format: "double"}},
-		{Name: "published", In: "query", Schema: goninja.Schema{Type: "boolean"}},
-		{Name: "limit", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "offset", In: "query", Schema: goninja.Schema{Type: "integer"}},
-		{Name: "order", In: "query", Schema: goninja.Schema{Type: "string"}},
+	listParams := []openapi.Parameter{
+		{Name: "author_id", In: "query", Schema: openapi.Schema{Type: "string"}},
+		{Name: "price", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
+		{Name: "price_min", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
+		{Name: "price_max", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
+		{Name: "published", In: "query", Schema: openapi.Schema{Type: "boolean"}},
+		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
+		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},
 	}
 
-	idParam := goninja.Parameter{
+	idParam := openapi.Parameter{
 		Name:     "id",
 		In:       "path",
 		Required: true,
-		Schema:   goninja.Schema{Type: "string"},
+		Schema:   openapi.Schema{Type: "string"},
 	}
 
 	cfg := r.resourceConfig()
 	basePath := cfg.PathOr("/books")
 	itemPath := basePath + "/{id}"
 
-	paths := map[string]*goninja.PathItem{}
+	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &goninja.PathItem{}
+	basePathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &goninja.Operation{
+		basePathItem.Get = &openapi.Operation{
 			Summary:    "List books",
 			Tags:       tags,
 			Parameters: listParams,
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &goninja.Operation{
+		basePathItem.Post = &openapi.Operation{
 			Summary: "Create a book",
 			Tags:    tags,
-			RequestBody: &goninja.RequestBody{
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookCreate"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookCreate"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"201": {Description: "Created", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+			Responses: map[string]openapi.Response{
+				"201": {Description: "Created", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 				}},
 				"422": {Description: "Validation error"},
 			},
@@ -585,34 +587,34 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		paths[basePath] = basePathItem
 	}
 
-	itemPathItem := &goninja.PathItem{}
+	itemPathItem := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &goninja.Operation{
+		itemPathItem.Get = &openapi.Operation{
 			Summary:    "Retrieve a book",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 				}},
 				"404": {Description: "Not found"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &goninja.Operation{
+		itemPathItem.Put = &openapi.Operation{
 			Summary:    "Update a book",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			RequestBody: &goninja.RequestBody{
+			Parameters: []openapi.Parameter{idParam},
+			RequestBody: &openapi.RequestBody{
 				Required: true,
-				Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookUpdate"}},
+				Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookUpdate"}},
 				},
 			},
-			Responses: map[string]goninja.Response{
-				"200": {Description: "OK", Content: map[string]goninja.MediaType{
-					"application/json": {Schema: goninja.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+			Responses: map[string]openapi.Response{
+				"200": {Description: "OK", Content: map[string]openapi.MediaType{
+					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 				}},
 				"404": {Description: "Not found"},
 				"422": {Description: "Validation error"},
@@ -620,11 +622,11 @@ func (r *BookResource) OpenAPI() (map[string]*goninja.PathItem, map[string]gonin
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &goninja.Operation{
+		itemPathItem.Delete = &openapi.Operation{
 			Summary:    "Delete a book",
 			Tags:       tags,
-			Parameters: []goninja.Parameter{idParam},
-			Responses: map[string]goninja.Response{
+			Parameters: []openapi.Parameter{idParam},
+			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
 				"404": {Description: "Not found"},
 			},
@@ -653,8 +655,8 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain Mount has a zero Config, so Protect is a
+// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *BookResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

@@ -1,4 +1,11 @@
-package goninja
+// Package openapi is goninja's small OpenAPI 3.0 subset (plan section
+// 5.10/Fase 5) and the Mount/API/Resource plumbing that wires generated
+// resources onto an *http.ServeMux while merging their fragments into one
+// document. Split out of the root goninja package (Fase 7 ad hoc
+// architectural change) so callers who only need routing/docs types don't
+// pull in the whole runtime — every generated <Model>Resource still
+// implements openapi.Resource via its OpenAPI() method.
+package openapi
 
 import "net/http"
 
@@ -127,7 +134,7 @@ func Mount(mux *http.ServeMux, doc *API, resources ...Resource) {
 		if doc == nil {
 			continue
 		}
-		if x, ok := r.(interface{ docsExcluded() bool }); ok && x.docsExcluded() {
+		if x, ok := r.(interface{ DocsExcluded() bool }); ok && x.DocsExcluded() {
 			continue
 		}
 		doc.Add(r)

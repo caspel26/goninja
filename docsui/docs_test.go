@@ -1,9 +1,11 @@
-package goninja
+package docsui
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/caspel26/goninja/openapi"
 )
 
 type fakeDocsUI struct{}
@@ -20,7 +22,7 @@ func (fakeDocsUI) Assets() map[string]DocsAsset {
 
 func TestMountDocs(t *testing.T) {
 	mux := http.NewServeMux()
-	doc := NewAPI("Test API", "1.0.0")
+	doc := openapi.NewAPI("Test API", "1.0.0")
 	MountDocs(mux, doc, "/docs", fakeDocsUI{})
 
 	srv := httptest.NewServer(mux)
@@ -82,7 +84,7 @@ func TestMountDocs(t *testing.T) {
 
 func TestMountDocs_NilUIDefaultsToSwaggerUI(t *testing.T) {
 	mux := http.NewServeMux()
-	doc := NewAPI("Test API", "1.0.0")
+	doc := openapi.NewAPI("Test API", "1.0.0")
 	MountDocs(mux, doc, "docs", nil) // no leading slash, and nil UI — must not panic
 
 	srv := httptest.NewServer(mux)

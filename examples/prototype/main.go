@@ -28,9 +28,10 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/caspel26/goninja"
+	"github.com/caspel26/goninja/docsui"
 	"github.com/caspel26/goninja/examples/prototype/internal/api"
 	"github.com/caspel26/goninja/examples/prototype/models"
+	"github.com/caspel26/goninja/openapi"
 )
 
 func main() {
@@ -49,15 +50,15 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	doc := goninja.NewAPI("goninja prototype", "0.1.0")
+	doc := openapi.NewAPI("goninja prototype", "0.1.0")
 
-	goninja.Mount(mux, doc,
+	openapi.Mount(mux, doc,
 		api.NewTaskResource(db),
 		api.NewAuthorResource(db),
 		api.NewBookResource(db),
 	)
-	// goninja.ReDoc() is a drop-in alternative to goninja.SwaggerUI() here.
-	goninja.MountDocs(mux, doc, "/docs", goninja.SwaggerUI())
+	// docsui.ReDoc() is a drop-in alternative to docsui.SwaggerUI() here.
+	docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())
 
 	log.Println("prototype listening on :8080 (/tasks, /authors, /books — GET, POST, GET/{id}, PUT/{id}, DELETE/{id}; /docs for OpenAPI/Swagger UI)")
 	log.Fatal(http.ListenAndServe(":8080", mux))
