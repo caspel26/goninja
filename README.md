@@ -50,7 +50,8 @@ import (
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
 
-    "github.com/caspel26/goninja"
+    "github.com/caspel26/goninja/docsui"
+    "github.com/caspel26/goninja/openapi"
     "myapp/internal/api"
     "myapp/models"
 )
@@ -60,13 +61,13 @@ func main() {
     db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
 
     mux := http.NewServeMux()
-    doc := goninja.NewAPI("Bookstore API", "0.1.0")
+    doc := openapi.NewAPI("Bookstore API", "0.1.0")
 
-    goninja.Mount(mux, doc,
+    openapi.Mount(mux, doc,
         api.NewAuthorResource(db),
         api.NewBookResource(db),
     )
-    goninja.MountDocs(mux, doc, "/docs", goninja.SwaggerUI())
+    docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())
 
     http.ListenAndServe(":8080", mux)
 }
@@ -74,7 +75,7 @@ func main() {
 
 That's a full `net/http` server: `GET/POST /books`, `GET/PUT/DELETE
 /books/{id}`, filtering, pagination, validation, and `/docs` — all from the
-struct at the top. `goninja.Mount` just does `Register(mux)` +
+struct at the top. `openapi.Mount` just does `Register(mux)` +
 `doc.Add(...)` for every resource passed to it, so you're never required to
 go through it either.
 
@@ -109,7 +110,7 @@ for any number of models, verified end to end against Postgres. A model's
 ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
 generates itself) — `examples/prototype`'s models use UUID IDs. Every
 generated resource also emits an OpenAPI 3.0 fragment from the same
-annotations, groupable under custom tags per resource; `goninja.MountDocs`
+annotations, groupable under custom tags per resource; `docsui.MountDocs`
 merges every registered resource's fragment and serves it as JSON plus a
 docs UI — Swagger UI or ReDoc ship built in, both fully embedded with no
 external CDN, and the `DocsUI` interface it takes isn't hardcoded to
@@ -127,13 +128,16 @@ $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 
 Hooks, per-method overriding, custom path/route config, a global default
 auth policy + middleware, and a per-field choice between nesting a
-relation and exposing just its ID (all below) are built. The root
-`goninja` package now has a test suite (`make cover` for coverage against
-its own + `internal/codegen`'s, enforced at 70% in CI).
+relation and exposing just its ID (all below) are built. The runtime is
+split into the root `goninja` package (`BaseResource`, error types, hooks)
+plus focused subpackages — `openapi`, `docsui`, `mw` (auth/config),
+`pagination`, `validate`, `id` — each with its own test suite (`make
+cover` for coverage across all of them plus `internal/codegen`, enforced
+at 70% in CI).
 
 ### Generated docs UI
 
-One call — `goninja.MountDocs(mux, doc, "/docs", ui)` — serves the merged
+One call — `docsui.MountDocs(mux, doc, "/docs", ui)` — serves the merged
 OpenAPI document as JSON plus a rendered UI, both fully embedded (no
 external CDN). `ui` is an interface, not a hardcoded renderer, so swapping
 one line swaps the whole UI:
@@ -142,14 +146,14 @@ one line swaps the whole UI:
 <tr>
 <td width="50%" align="center">
 
-**Swagger UI**<br><sub>`goninja.SwaggerUI()` — the default</sub>
+**Swagger UI**<br><sub>`docsui.SwaggerUI()` — the default</sub>
 
 <img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model" width="100%">
 
 </td>
 <td width="50%" align="center">
 
-**ReDoc**<br><sub>`goninja.ReDoc()` — a drop-in swap</sub>
+**ReDoc**<br><sub>`docsui.ReDoc()` — a drop-in swap</sub>
 
 <img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples" width="100%">
 
@@ -223,13 +227,15 @@ caching in front of the generated query without forking it.
 
 ### Custom path and restricted routes
 
-The same `SetSelf` wrapper can implement `goninja.Configurer` to override
-the resource's mount path or drop routes it shouldn't expose — both
+The same `SetSelf` wrapper can implement `mw.Configurer` to override the
+resource's mount path or drop routes it shouldn't expose — both
 `Register(mux)` and the generated OpenAPI fragment pick this up:
 
 ```go
-func (r *authorWithAudit) Config() goninja.ResourceConfig {
-    return goninja.ResourceConfig{
+import "github.com/caspel26/goninja/mw"
+
+func (r *authorWithAudit) Config() mw.ResourceConfig {
+    return mw.ResourceConfig{
         Path:   "/v1/authors", // default would be "/authors"
         Routes: []string{"list", "retrieve"}, // no create/update/delete
     }
@@ -245,11 +251,13 @@ against the default.
 
 ### Global auth and middleware
 
-`goninja.MountWithConfig` is `Mount` plus a `Config`: a global default auth
-policy and generic middleware (logging, CORS, ...) applied to every
+`mw.MountWithConfig` is `openapi.Mount` plus a `Config`: a global default
+auth policy and generic middleware (logging, CORS, ...) applied to every
 resource passed to it.
 
 ```go
+import "github.com/caspel26/goninja/mw"
+
 authMW := func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
         user, ok := authenticate(req) // yours
@@ -257,19 +265,19 @@ authMW := func(next http.Handler) http.Handler {
             http.Error(w, "unauthorized", http.StatusUnauthorized)
             return
         }
-        next.ServeHTTP(w, req.WithContext(goninja.WithUser(req.Context(), user)))
+        next.ServeHTTP(w, req.WithContext(mw.WithUser(req.Context(), user)))
     })
 }
 
-cfg := goninja.Config{
-    DefaultAuth: goninja.AuthPolicy{
+cfg := mw.Config{
+    DefaultAuth: mw.AuthPolicy{
         Protected:  []string{"create", "update", "delete"},
         Middleware: []func(http.Handler) http.Handler{authMW},
     },
     Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 }
 
-goninja.MountWithConfig(mux, doc, cfg,
+mw.MountWithConfig(mux, doc, cfg,
     api.NewAuthorResource(db),
     api.NewBookResource(db),
 )
@@ -282,12 +290,12 @@ resource's own `ResourceConfig.Auth` override is folded in. `Middleware`
 wraps every route on every resource unconditionally, public or not. A
 resource that reads the authenticated user — typically inside
 `DefaultAuth.Middleware` itself, or from an overridden method/hook —
-retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
-being just `ID() string`; goninja never constructs one itself.
+retrieves it with `mw.UserFromContext(ctx)`, the `User` interface being
+just `ID() string`; goninja never constructs one itself.
 
-Plain `Mount` still works exactly as before — a resource it mounts gets a
-zero `Config`, so nothing is protected and no middleware runs, unless you
-switch that resource to `MountWithConfig`.
+Plain `openapi.Mount` still works exactly as before — a resource it
+mounts gets a zero `Config`, so nothing is protected and no middleware
+runs, unless you switch that resource to `mw.MountWithConfig`.
 
 ### Relations: nested or by ID
 

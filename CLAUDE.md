@@ -126,6 +126,38 @@ test-only sqlite dependency above, which only backs the framework's own
 tests). Don't over-build beyond what the current phase calls for without
 checking the plan.
 
+**Ad hoc architectural change (2026-08-19, not a plan item):** the runtime
+was split from one flat root `goninja` package into the root package plus
+six focused subpackages — `openapi`, `docsui`, `mw`, `pagination`,
+`validate`, `id` — at the user's explicit request, after they pushed back
+on the flat 25-file root directory (~14 source + ~11 test files) that had
+accumulated by the end of Phase 6/7. This reverses the single-flat-package
+design Phases 0-6 deliberately chose (see the old "No shared runtime
+file..." rationale, still true in spirit — there's still no per-model
+runtime duplication, just now split across import boundaries instead of
+one directory). See the Architecture section below for the resulting
+package boundaries; the dependency graph is acyclic: `openapi` is
+standalone; `docsui` and `mw` depend only on `openapi`; `pagination` and
+`validate` depend only on root `goninja` (for `BadRequest`/
+`ValidationError`); `id` is standalone; root `goninja` depends on `mw`
+(`BaseResource.config` is an `mw.Config`, `Protect` takes an
+`mw.ResourceConfig`). Two non-obvious things this forced: `BaseResource`'s
+`docsExcluded() bool` had to become exported `DocsExcluded() bool`, since
+Go's unexported-method interface satisfaction is package-scoped — the
+structural checks in `openapi.Mount`/`mw.MountWithConfig` (`interface{
+docsExcluded() bool }`) couldn't see an unexported method declared in a
+different package even with an identical signature; and the new `docsui`
+package (not `docs`, plan's original wording) avoids colliding with the
+pre-existing top-level `docs/` directory (README screenshots, logo) — the
+vendored Swagger UI/ReDoc assets moved from `docs/swagger-ui/`/
+`docs/redoc/` to `docsui/swagger-ui/`/`docsui/redoc/` alongside the
+`go:embed` directives that reference them (`go:embed` can't traverse to a
+parent directory, so they have to live under the package that embeds
+them). Every `internal/codegen/templates/model.go.tmpl`-generated file,
+`examples/prototype`, and every README code example were updated for the
+new import paths; `scripts/coverage.sh` now covers all six subpackages
+plus root and `internal/codegen`.
+
 ## Commands
 
 ```sh
@@ -133,7 +165,7 @@ make build               # go build ./...
 make test                # go test ./...
 make vet                 # go vet ./...
 make fmt                 # gofmt -l . (lists unformatted files)
-make cover               # coverage for . + internal/codegen; make cover THRESHOLD=70 to fail below it (CI does this)
+make cover               # coverage for . + internal/codegen + docsui/id/mw/openapi/pagination/validate; make cover THRESHOLD=70 to fail below it (CI does this)
 make cover-badge         # regenerate coverage-badge.json (README badge) from the last `make cover` run
 make generate-prototype  # regenerate examples/prototype/internal/api from examples/prototype/models
 make run-prototype       # generate-prototype, then run the example server on :8080 (needs PROTOTYPE_DSN, see below)
@@ -181,33 +213,76 @@ Three pieces:
      `goninja.Validate`) lives in the root `goninja` package and is called
      directly, so there's nothing to deduplicate across models.
 
-2. **root package `goninja`** (`resource.go`, `hooks.go`,
-   `resource_config.go`, `auth.go`, `config.go`, `errors.go`, `validate.go`,
-   `mapper.go`, `pagination.go`, `id.go`, `openapi.go`, `docs.go`,
-   `docs_swaggerui.go`, `docs_redoc.go`) — the runtime support generated
-   code depends on:
-   `BaseResource` (embedded by every generated `<Model>Resource`), its
-   transaction-aware `DB(ctx)`, `InTransaction`/`WithTx`/`TxFromContext`,
-   and `SetSelf`/`Self()` (the dispatch point hooks, method overrides, and
-   `Configurer` all resolve through, since Go has no dynamic dispatch
-   through embedding — plan section 5.10); the error types
-   `NotFound`/`ValidationError`/`BadRequest`; `Validate` (runs
-   `go-playground/validator` against a Create/Update schema's `validate`
-   tags, returning `ValidationError` keyed by JSON field name);
-   `hooks.go`'s `BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/
-   `BeforeDeleteHook` optional interfaces (Phase 6); `resource_config.go`'s
-   `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section 5.3);
-   `auth.go`'s `User`/`WithUser`/`UserFromContext` (Phase 6, plan section
-   5.8); `config.go`'s `Config`/`AuthPolicy`/`MountWithConfig` plus
-   `BaseResource.SetConfig`/`Config`/`Protect` (Phase 6, plan section 6 item
-   5 — the global auth/middleware enforcement); and
-   `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
-   section 5.11) — a resource's `SetErrorMapper` overrides how its
-   generated handlers turn an error into an HTTP response; unset falls
-   back to `DefaultErrorMapper`. `openapi.go`'s `API`/`OpenAPIProvider`
-   and `docs.go`'s `MountDocs`/`DocsUI` are the Phase 5 OpenAPI/docs-UI
-   runtime support (see below). Generated code imports this package as
-   `github.com/caspel26/goninja`.
+2. **root package `goninja`** (`resource.go`, `hooks.go`, `errors.go`,
+   `mapper.go`) plus six focused subpackages split out of it in an ad hoc
+   Fase 7 change (see the "What this is" note above) — `openapi`, `docsui`,
+   `mw`, `pagination`, `validate`, `id`. Together this is the runtime
+   support generated code depends on:
+   - **root `goninja`**: `BaseResource` (embedded by every generated
+     `<Model>Resource`), its transaction-aware `DB(ctx)`,
+     `InTransaction`/`WithTx`/`TxFromContext`, and `SetSelf`/`Self()` (the
+     dispatch point hooks, method overrides, and `mw.Configurer` all
+     resolve through, since Go has no dynamic dispatch through embedding —
+     plan section 5.10); the error types `NotFound`/`ValidationError`/
+     `BadRequest`; `hooks.go`'s `BeforeCreateHook`/`AfterCreateHook`/
+     `BeforeUpdateHook`/`BeforeDeleteHook` optional interfaces (Phase 6);
+     and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+     section 5.11) — a resource's `SetErrorMapper` overrides how its
+     generated handlers turn an error into an HTTP response; unset falls
+     back to `DefaultErrorMapper`. `BaseResource` also holds
+     `SetConfig`/`Config`/`Protect` (typed on `mw.Config`/
+     `mw.ResourceConfig` — see `mw` below) and `DocsExcluded()` (exported,
+     not `docsExcluded`, so `openapi.Mount`/`mw.MountWithConfig` in other
+     packages can structurally check it — Go's unexported-method interface
+     satisfaction is package-scoped). Generated code imports this package
+     as `github.com/caspel26/goninja`.
+   - **`openapi`** (standalone, only `net/http`): the small typed OpenAPI
+     3.0 subset (`Schema`/`Parameter`/`RequestBody`/`Response`/
+     `Operation`/`PathItem`/`Spec`), `OpenAPIProvider`, `API`
+     (`NewAPI`/`Add`/`Spec`), and `Mount(mux, doc, resources...)` — calls
+     `Register`+`Add` for every `Resource` (the `Register(mux)` +
+     `OpenAPIProvider` combo every generated `<Model>Resource` satisfies).
+   - **`docsui`** (depends on `openapi`): `MountDocs(mux, api, path, ui)`
+     serves the merged spec as JSON plus a rendered UI — `ui` is the
+     `DocsUI` interface (`Index`/`Assets`), not a hardcoded renderer.
+     `SwaggerUI()`/`ReDoc()` both ship built in, each with its own vendored
+     assets under `docsui/swagger-ui/`/`docsui/redoc/` served via
+     `go:embed` (named `docsui`, not `docs`, to avoid colliding with the
+     pre-existing top-level `docs/` directory of README screenshots — and
+     because `go:embed` can't reach a parent directory, the assets had to
+     move under the package that embeds them) — no external CDN, and a
+     caller can implement `DocsUI` itself for anything else.
+   - **`mw`** (depends on `openapi`): `resource_config.go`'s
+     `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section
+     5.3) — a `Configurer` implemented on a `SetSelf` wrapper overrides a
+     resource's mount path and/or restricts which routes `Register`/
+     `OpenAPI()` emit; `auth.go`'s `User`/`WithUser`/`UserFromContext`
+     (Phase 6, plan section 5.8) — the minimal contract between an auth
+     middleware and a resource; and `config.go`'s `Config`/`AuthPolicy`/
+     `MountWithConfig(mux, doc, cfg, resources...)` — a sibling to
+     `openapi.Mount` since goninja's actual per-resource `Register`/`Mount`
+     shape diverged from the plan's original central
+     `goninja.New(Config)`/`api.Register(mux, resource)` sketch:
+     `MountWithConfig` calls `BaseResource.SetConfig(cfg)` on every
+     resource before `Register(mux)`, and each generated `Register` wraps
+     every handler through `BaseResource.Protect(route, cfg, handler)` —
+     combines the global `Config.DefaultAuth.Protected` with the
+     resource's own `ResourceConfig.Auth` (`AlsoProtect`/`Public`,
+     additive-only, finally enforced) to decide whether that route is
+     protected, wraps it with `Config.DefaultAuth.Middleware` only if so,
+     and with `Config.Middleware` (logging/CORS-style, always applied)
+     regardless. Plain `openapi.Mount` still works unchanged — a resource
+     it mounts has a zero `Config`, so `Protect` is a no-op.
+   - **`pagination`** (depends on root `goninja`, for `BadRequest`):
+     `ListEnvelope[T]` (`{items, total, limit, offset}`) and
+     `ParseLimitOffset` (`DefaultLimit`/`MaxLimit` bounds shared by every
+     model).
+   - **`validate`** (depends on root `goninja`, for `ValidationError`):
+     `Validate` runs `go-playground/validator` against a Create/Update
+     schema's `validate` tags, returning `ValidationError` keyed by JSON
+     field name.
+   - **`id`** (standalone): `NewUUID()`, used by `Create` when a model's ID
+     field is a `string` (UUID primary key).
 
 3. **`cmd/goninja`** — the CLI (`goninja generate`), a thin flag-parsing
    wrapper around `internal/codegen`.
@@ -225,11 +300,11 @@ Postgres and is the concrete proof for the Phase 0-2 exit criteria:
   imported by others.
 - `main.go` — a real `net/http` server, opens Postgres via
   `PROTOTYPE_DSN`, `AutoMigrate`s all three models, and wires all three
-  generated resources with a single `goninja.Mount(mux, doc,
+  generated resources with a single `openapi.Mount(mux, doc,
   api.NewTaskResource(db), api.NewAuthorResource(db),
   api.NewBookResource(db))` call, then mounts the merged doc + a docs UI
-  at `/docs` (`goninja.MountDocs(mux, doc, "/docs", goninja.SwaggerUI())`
-  — `goninja.ReDoc()` is a drop-in alternative).
+  at `/docs` (`docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())`
+  — `docsui.ReDoc()` is a drop-in alternative).
 
 When changing the generator's output shape (schemas, handler signatures,
 route registration, query behavior), the templates in
@@ -279,7 +354,7 @@ hand-editing anything under `examples/prototype/internal/api`.
   `Retrieve`/`Update`/`Delete` signatures plus path-value parsing adapt to
   it. `int64` parses the path value with `strconv.ParseInt`; anything else
   (in practice `string`) is taken as-is and treated as a UUID primary key
-  — `Create` fills it in via `goninja.NewUUID` when empty. See
+  — `Create` fills it in via `id.NewUUID()` when empty. See
   `examples/prototype`'s three models for the UUID case.
 - A `filter`-tagged field generates an exact-match pointer field on
   `<Model>Filters` (`Field.FilterFields` in `ir.go`), plus `Min`/`Max`
@@ -292,18 +367,18 @@ hand-editing anything under `examples/prototype/internal/api`.
   `goninja.BadRequest` — keep that parsing/validation split (like
   `Create`/`Update`'s JSON-decode step) rather than pushing parsing into
   `List` itself.
-- List responses are wrapped in `goninja.ListEnvelope[T]`
-  (`{items, total, limit, offset}`, root package) by the generated
-  `listHandler`; `Retrieve`/`Create`/`Update` stay unwrapped (plan section
-  5.9). `goninja.ParseLimitOffset` (root package) owns the
-  `DefaultLimit`/`MaxLimit` bounds shared by every model.
+- List responses are wrapped in `pagination.ListEnvelope[T]`
+  (`{items, total, limit, offset}`) by the generated `listHandler`;
+  `Retrieve`/`Create`/`Update` stay unwrapped (plan section 5.9).
+  `pagination.ParseLimitOffset` owns the `DefaultLimit`/`MaxLimit` bounds
+  shared by every model.
 - A model field's `validate:"..."` struct tag is copied verbatim onto the
   matching `Create`/`Update` type field (`ir.go`'s `Field.ValidateTag`);
-  `Create`/`Update` call `goninja.Validate` before touching the database.
+  `Create`/`Update` call `validate.Validate` before touching the database.
   `List`/`Retrieve` fields never carry it — validation only applies to
   input.
 - Every generated `<Model>Resource` also gets an `OpenAPI()` method
-  (`model.go.tmpl`) implementing `goninja.OpenAPIProvider`, built from the
+  (`model.go.tmpl`) implementing `openapi.OpenAPIProvider`, built from the
   same IR as everything else in the file — never hand-maintained JSON.
   `ir.go`'s `Field.OpenAPIType`/`OpenAPIFormat` map a Go type to its JSON
   Schema type/format at generation time (not runtime reflection); a
@@ -312,35 +387,36 @@ hand-editing anything under `examples/prototype/internal/api`.
   operation in the fragment carries `BaseResource.OpenAPITags()` (default
   `[]string{"<Model>"}`, override via `SetOpenAPITags` before `Register`)
   as its OpenAPI `tags` — how a rendered UI groups the resource's routes.
-  A caller wires resources into a document with `goninja.NewAPI` +
-  `goninja.Mount(mux, doc, resources...)` — `Mount` (root package,
-  `openapi.go`) takes any number of `goninja.Resource` (the
-  `Register(mux)` + `OpenAPIProvider` combo every generated
-  `<Model>Resource` satisfies), calling `Register` and `Add` for each so
-  callers don't hand-pair those calls per resource — then
-  `goninja.MountDocs(mux, api, path, ui)` — `ui` is the `DocsUI` interface
-  goninja doesn't hardcode a renderer for; `goninja.SwaggerUI()` and
-  `goninja.ReDoc()` both ship built in (own vendored, `go:embed`'d
+  A caller wires resources into a document with `openapi.NewAPI` +
+  `openapi.Mount(mux, doc, resources...)` — `Mount` takes any number of
+  `openapi.Resource` (the `Register(mux)` + `OpenAPIProvider` combo every
+  generated `<Model>Resource` satisfies), calling `Register` and `Add` for
+  each so callers don't hand-pair those calls per resource — then
+  `docsui.MountDocs(mux, api, path, ui)` — `ui` is the `docsui.DocsUI`
+  interface goninja doesn't hardcode a renderer for; `docsui.SwaggerUI()`
+  and `docsui.ReDoc()` both ship built in (own vendored, `go:embed`'d
   assets), or implement `DocsUI` for anything else. `MountDocs` serves the
   UI at `path+"/"` and 301-redirects the bare `path` there, since a
   `DocsUI`'s Index references its Assets by relative filename and those
   only resolve against the trailing-slash URL. Docs are opt-out at two
-  levels: pass `doc = nil` to `Mount` to skip OpenAPI entirely (routes
-  still mount, nothing gets documented, and `MountDocs` shouldn't be
-  called at all in that case); call a resource's
+  levels: pass `doc = nil` to `openapi.Mount` to skip OpenAPI entirely
+  (routes still mount, nothing gets documented, and `MountDocs` shouldn't
+  be called at all in that case); call a resource's
   `BaseResource.ExcludeFromDocs()` before passing it to `Mount` to keep
   one resource's routes mounted while leaving it out of the merged spec
-  specifically — `Mount` checks this via an unexported
-  `docsExcluded() bool` method. See `examples/prototype/main.go`; README
-  has screenshots of both UIs under `docs/screenshots/`.
+  specifically — `Mount` checks this via `BaseResource.DocsExcluded()`
+  (exported, not `docsExcluded`, so the cross-package structural check in
+  `openapi.Mount` can see it — Go's unexported-method interface
+  satisfaction is package-scoped). See `examples/prototype/main.go`;
+  README has screenshots of both UIs under `docs/screenshots/`.
 - A generated `<Model>Resource` also gets a `resourceConfig()` helper
-  (`model.go.tmpl`) resolving a `goninja.ResourceConfig` off `r.Self()`
-  when it implements `goninja.Configurer` (`resource_config.go`, plan
-  section 5.3), else `ResourceConfig{}` — same `SetSelf` dispatch as hooks.
-  Both `Register(mux)` and `OpenAPI()` read it: `cfg.PathOr("/<model>s")`
-  swaps the mount path (id routes append `/{id}` to whatever it resolves
-  to), and `cfg.RouteEnabled("list"|"retrieve"|"create"|"update"|"delete")`
-  gates which routes each method emits — `Routes` is opt-in restriction
+  (`model.go.tmpl`) resolving an `mw.ResourceConfig` off `r.Self()` when it
+  implements `mw.Configurer` (plan section 5.3), else `mw.ResourceConfig{}`
+  — same `SetSelf` dispatch as hooks. Both `Register(mux)` and `OpenAPI()`
+  read it: `cfg.PathOr("/<model>s")` swaps the mount path (id routes append
+  `/{id}` to whatever it resolves to), and
+  `cfg.RouteEnabled("list"|"retrieve"|"create"|"update"|"delete")` gates
+  which routes each method emits — `Routes` is opt-in restriction
   (nil/empty means every route), not an enable list that must be spelled
   out in full. `OpenAPI()` mirrors this exactly so the merged spec never
   documents a route `Register` didn't actually mount. `ResourceConfig.Auth`
@@ -349,10 +425,10 @@ hand-editing anything under `examples/prototype/internal/api`.
   global default, never silently remove it) and is now enforced: `Register`
   wraps every handler through `r.Protect(route, cfg, handler)`
   (`BaseResource`, `resource.go`), which combines `cfg.Auth` with the
-  resource's `Config` (global `DefaultAuth`/`Middleware`, `config.go`, set
-  via `MountWithConfig` — a sibling to `Mount` a caller uses instead of it
-  once there's a global policy to enforce) to decide whether that route is
-  protected, then applies `DefaultAuth.Middleware` only if so and
-  `Config.Middleware` (logging/CORS-style) unconditionally. A resource
-  mounted via plain `Mount` has a zero `Config`, so `Protect` is a no-op —
-  no behavior change for callers that don't opt in.
+  resource's `Config` (global `DefaultAuth`/`Middleware`, `mw.Config`, set
+  via `mw.MountWithConfig` — a sibling to `openapi.Mount` a caller uses
+  instead of it once there's a global policy to enforce) to decide whether
+  that route is protected, then applies `DefaultAuth.Middleware` only if so
+  and `Config.Middleware` (logging/CORS-style) unconditionally. A resource
+  mounted via plain `openapi.Mount` has a zero `Config`, so `Protect` is a
+  no-op — no behavior change for callers that don't opt in.
