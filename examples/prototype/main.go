@@ -1,9 +1,7 @@
-// Command prototype wires the Phase 0 generated code into a real
-// net/http server. It exists to answer the goninja-implementation-plan.md
-// Phase 0 decision-gate questions:
-//   - is "edit struct → regenerate → use" acceptable?
-//   - is the generated code readable/debuggable?
-//   - how complex is it to keep the templates maintainable?
+// Command prototype wires the generated code into a real net/http server.
+// It carries two distinct models (Task, Author) precisely to prove the
+// Phase 1 exit criterion in goninja-implementation-plan.md: the engine
+// generalizes beyond the single model used for the Phase 0 decision gate.
 //
 // Run:
 //
@@ -26,6 +24,9 @@ func main() {
 	tasks := api.NewTaskResource()
 	tasks.Register(mux)
 
-	log.Println("prototype listening on :8080 (GET/POST /tasks, GET /tasks/{id})")
+	authors := api.NewAuthorResource()
+	authors.Register(mux)
+
+	log.Println("prototype listening on :8080 (GET/POST /tasks, GET /tasks/{id}, GET/POST /authors, GET /authors/{id})")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

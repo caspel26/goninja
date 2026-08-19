@@ -12,13 +12,15 @@ build plan, and rationale — lives in
 before making architectural changes, since most decisions in this repo
 trace back to it.
 
-**Current phase: Phase 0 (prototype / decision gate)**, per section 6 of
-the plan. What exists today is deliberately minimal — no ORM, a single tag
-vocabulary (`list`, `retrieve`, `create`), in-memory storage — built only
-to answer three questions before investing in the real engine (does the
-"edit struct → regenerate → use" loop work; is generated code readable;
-how hard is it to keep templates maintainable). Don't over-build beyond
-what the current phase calls for without checking the plan.
+**Current phase: Phase 1 (code-generation engine)**, per section 6 of the
+plan. Phase 0's decision gate passed (documented in the plan next to the
+Phase 0 section) and its parser/IR/template/CLI became the base Phase 1
+builds on, rather than being thrown away. What exists today is still
+deliberately minimal — no ORM, a single tag vocabulary (`list`,
+`retrieve`, `create`), in-memory storage — because ORM integration,
+validation, filters/pagination, and OpenAPI are separate later phases.
+Don't over-build beyond what the current phase calls for without checking
+the plan.
 
 ## Commands
 
@@ -67,15 +69,16 @@ Two independent pieces:
    wrapper around `internal/codegen`.
 
 **`examples/prototype`** exercises the whole loop end to end and is the
-concrete proof for the Phase 0 decision gate:
-- `models/task.go` — the one annotated model.
+concrete proof for both the Phase 0 decision gate and the Phase 1 exit
+criterion ("works on a second, different model"):
+- `models/task.go`, `models/author.go` — two annotated models, distinct in
+  field count/types.
 - `internal/api/` — **generated output, never hand-edit**; regenerate via
   `make generate-prototype`. Lives under `internal/` deliberately (Go's
   compiler-enforced non-importability from outside the module), since
   generated code is meant to be used only through the consuming app, not
   imported by others.
-- `main.go` — a real `net/http` server wired to the generated
-  `TaskResource`.
+- `main.go` — a real `net/http` server wired to both generated resources.
 
 When changing the generator's output shape (schemas, handler signatures,
 route registration), the templates in

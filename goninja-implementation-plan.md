@@ -378,6 +378,14 @@ Un solo modello, persistenza in memoria, nessun ORM, un solo tag. Serve a rispon
 
 **Exit criteria**: decisione scritta se procedere. Se il workflow è troppo scomodo, ci si ferma qui — 12-16 ore, non mesi.
 
+**Decisione (2026-08-19): si procede.**
+
+- Il ciclo "modifico struct → rigenero → uso" è accettabile: `goninja generate` seguito da `go build` è indistinguibile in pratica da altri workflow di codegen Go già familiari (`sqlc`, `protoc`). Nessun attrito percepito su un singolo modello.
+- Il codice generato è leggibile: schemi, store e handler prodotti in `examples/prototype/internal/api` sono codice Go ordinario, ispezionabile senza sforzo, verificato manualmente riga per riga.
+- Complessità dei template: un `text/template` per modello più un file runtime condiviso restano gestibili; il primo attrito reale atteso è nel passare da un solo tag (`list,retrieve,create`) al vocabolario completo (+ `update`, `filter`, FK) — rimandato a Fase 1/2/3 come da piano.
+
+Si passa a Fase 1. Il parser/IR/template/CLI di Fase 0 (`internal/codegen`, `cmd/goninja`) non vengono buttati: sono la base su cui Fase 1 costruisce, non un throwaway separato — pragmatico dato che già rispettano la struttura voluta (parser `go/ast`, IR disaccoppiata, template, CLI).
+
 ---
 
 ### Fase 1 — Motore di code generation (20-28 hrs)
