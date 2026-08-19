@@ -124,8 +124,9 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-Hooks and per-method overriding (below) are built; auth is still designed
-but not yet built.
+Hooks, per-method overriding, and custom path/route config (below) are
+built; the `WithUser`/`UserFromContext` context contract exists too, but
+nothing enforces auth yet — a global default/middleware is still to come.
 
 ### Generated docs UI
 
@@ -237,6 +238,47 @@ leave it unset (or nil) to keep every route. `ResourceConfig` also carries
 an additive-only `Auth` override (`AuthOverride.AlsoProtect`/`Public`) for
 the global default auth landing in a later phase; it's plumbed through
 today but nothing enforces it yet.
+
+### The authenticated user
+
+`goninja.WithUser`/`goninja.UserFromContext` are the contract between your
+auth middleware and a resource — goninja doesn't impose a user struct
+beyond a one-method interface:
+
+```go
+type User interface {
+    ID() string
+}
+```
+
+Your middleware authenticates the request and stores the result:
+
+```go
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+        user, ok := authenticate(req) // yours
+        if ok {
+            req = req.WithContext(goninja.WithUser(req.Context(), user))
+        }
+        next.ServeHTTP(w, req)
+    })
+}
+```
+
+A resource reads it back, typically from an overridden method or a hook:
+
+```go
+func (r *authorWithAudit) BeforeCreate(ctx context.Context, in *api.AuthorCreate) error {
+    if user, ok := goninja.UserFromContext(ctx); ok {
+        log.Printf("author created by %s", user.ID())
+    }
+    return nil
+}
+```
+
+Nothing enforces authentication yet — that's `Config.DefaultAuth`/
+`Config.Middleware`, a later phase; until then, a resource that wants to
+require a user checks `UserFromContext` itself.
 
 ## Contributing
 

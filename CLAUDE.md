@@ -79,9 +79,14 @@ wrapper overrides a resource's mount path and/or restricts which routes
 every route). `AuthOverride` is additive-only by design (plan section
 5.3) and is plumbed through `ResourceConfig` already, but nothing enforces
 it yet — that's `Config.DefaultAuth`/`Config.Middleware`, still to come.
-Still not built: `WithUser`/`UserFromContext`, global default auth/
-middleware, relations nested-vs-by-id (plan §5.12). Don't over-build
-beyond what the current phase calls for without checking the plan.
+`auth.go`'s `User`/`WithUser`/`UserFromContext` (plan section 5.8) are the
+minimal contract between an auth middleware and a resource: middleware
+stores an authenticated `User` (a one-method interface, `ID() string`) on
+the context via `WithUser`, a resource reads it back via
+`UserFromContext`. Nothing enforces auth yet — still not built:
+`Config.DefaultAuth`/`Config.Middleware` globals, relations
+nested-vs-by-id (plan §5.12). Don't over-build beyond what the current
+phase calls for without checking the plan.
 
 ## Commands
 
@@ -137,7 +142,7 @@ Three pieces:
      directly, so there's nothing to deduplicate across models.
 
 2. **root package `goninja`** (`resource.go`, `hooks.go`,
-   `resource_config.go`, `errors.go`, `validate.go`, `mapper.go`,
+   `resource_config.go`, `auth.go`, `errors.go`, `validate.go`, `mapper.go`,
    `pagination.go`, `id.go`, `openapi.go`, `docs.go`, `docs_swaggerui.go`,
    `docs_redoc.go`) — the runtime support generated code depends on:
    `BaseResource` (embedded by every generated `<Model>Resource`), its
@@ -151,7 +156,8 @@ Three pieces:
    `hooks.go`'s `BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/
    `BeforeDeleteHook` optional interfaces (Phase 6); `resource_config.go`'s
    `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section 5.3);
-   and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+   `auth.go`'s `User`/`WithUser`/`UserFromContext` (Phase 6, plan section
+   5.8); and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
    section 5.11) — a resource's `SetErrorMapper` overrides how its
    generated handlers turn an error into an HTTP response; unset falls
    back to `DefaultErrorMapper`. `openapi.go`'s `API`/`OpenAPIProvider`
