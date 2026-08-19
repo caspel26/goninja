@@ -6,6 +6,6 @@ package models
 // automatic Preload on Retrieve (Phase 2 exit criterion).
 type Author struct {
 	ID   int64  `gorm:"primaryKey" json:"id" goninja:"list,retrieve"`
-	Name string `json:"name" goninja:"list,retrieve,create,update"`
-	Bio  string `json:"bio" goninja:"retrieve,create,update"`
+	Name string `json:"name" goninja:"list,retrieve,create,update" validate:"required,max=120"`
+	Bio  string `json:"bio" goninja:"retrieve,create,update" validate:"max=2000"`
 }

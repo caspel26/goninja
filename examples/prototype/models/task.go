@@ -5,6 +5,6 @@ package models
 // Task is the first prototype model.
 type Task struct {
 	ID    int64  `gorm:"primaryKey" json:"id" goninja:"list,retrieve"`
-	Title string `json:"title" goninja:"list,retrieve,create,update"`
+	Title string `json:"title" goninja:"list,retrieve,create,update" validate:"required,max=200"`
 	Done  bool   `json:"done" goninja:"list,retrieve,create,update"`
 }
