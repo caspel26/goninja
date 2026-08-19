@@ -8,6 +8,12 @@ import (
 	"github.com/caspel26/goninja/openapi"
 )
 
+type fakeSpecSource struct{}
+
+func (fakeSpecSource) Spec() openapi.Spec {
+	return openapi.Spec{OpenAPI: "3.0.3", Info: openapi.Info{Title: "Test API", Version: "1.0.0"}}
+}
+
 type fakeDocsUI struct{}
 
 func (fakeDocsUI) Index(specPath string) []byte {
@@ -22,7 +28,7 @@ func (fakeDocsUI) Assets() map[string]DocsAsset {
 
 func TestMountDocs(t *testing.T) {
 	mux := http.NewServeMux()
-	doc := openapi.NewAPI("Test API", "1.0.0")
+	doc := fakeSpecSource{}
 	MountDocs(mux, doc, "/docs", fakeDocsUI{})
 
 	srv := httptest.NewServer(mux)
@@ -84,7 +90,7 @@ func TestMountDocs(t *testing.T) {
 
 func TestMountDocs_NilUIDefaultsToSwaggerUI(t *testing.T) {
 	mux := http.NewServeMux()
-	doc := openapi.NewAPI("Test API", "1.0.0")
+	doc := fakeSpecSource{}
 	MountDocs(mux, doc, "docs", nil) // no leading slash, and nil UI — must not panic
 
 	srv := httptest.NewServer(mux)

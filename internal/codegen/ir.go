@@ -10,6 +10,11 @@ package codegen
 
 import "strings"
 
+// goTypeTime is the Go type name for a timestamp field — special-cased
+// throughout this file (numeric-ness, OpenAPI type/format, import needs)
+// since it's a scalar column but not a plain Go primitive.
+const goTypeTime = "time.Time"
+
 // scalarGoTypes are the field types treated as plain columns. Anything
 // else (a named struct type, or a slice of one) is treated as a relation
 // — see Field.IsRelation.
@@ -19,7 +24,7 @@ var scalarGoTypes = map[string]bool{
 	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
 	"float32": true, "float64": true,
 	"byte": true, "rune": true,
-	"time.Time": true,
+	goTypeTime: true,
 }
 
 // Field is one struct field annotated with a `goninja` tag.
@@ -116,7 +121,7 @@ func (f Field) IsFloat() bool { return floatGoTypes[f.GoType] }
 // scalar (excluding bool and string) — used to decide whether a `filter`
 // field also gets Min/Max range filters, in addition to exact match.
 func (f Field) IsNumeric() bool {
-	return scalarGoTypes[f.GoType] && !f.IsBool() && !f.IsString() && f.GoType != "time.Time"
+	return scalarGoTypes[f.GoType] && !f.IsBool() && !f.IsString() && f.GoType != goTypeTime
 }
 
 // OpenAPIType returns the JSON Schema "type" for the field's Go type, used
@@ -131,7 +136,7 @@ func (f Field) OpenAPIType() string {
 		return "string"
 	case f.IsFloat():
 		return "number"
-	case f.GoType == "time.Time":
+	case f.GoType == goTypeTime:
 		return "string"
 	case f.IsNumeric():
 		return "integer"
@@ -144,7 +149,7 @@ func (f Field) OpenAPIType() string {
 // or "" when the type has none (e.g. plain string, boolean).
 func (f Field) OpenAPIFormat() string {
 	switch {
-	case f.GoType == "time.Time":
+	case f.GoType == goTypeTime:
 		return "date-time"
 	case f.IsFloat():
 		return "double"
@@ -221,7 +226,7 @@ func (m Model) IDGoType() string {
 // meaning the generated file needs to import "time".
 func (m Model) UsesTime() bool {
 	for _, f := range m.Fields {
-		if f.GoType == "time.Time" && (f.HasTag("list") || f.HasTag("retrieve") || f.HasTag("create") || f.HasTag("update")) {
+		if f.GoType == goTypeTime && (f.HasTag("list") || f.HasTag("retrieve") || f.HasTag("create") || f.HasTag("update")) {
 			return true
 		}
 	}

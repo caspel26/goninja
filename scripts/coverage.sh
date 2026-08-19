@@ -18,7 +18,7 @@ go test . ./internal/codegen ./docsui ./id ./openapi -coverprofile="$profile" -c
 total="$(go tool cover -func="$profile" | awk '/^total:/ {print $3}' | tr -d '%')"
 echo "total coverage: ${total}%"
 
-if [ "${1:-}" != "" ]; then
+if [[ "${1:-}" != "" ]]; then
 	threshold="$1"
 	if awk -v t="$total" -v th="$threshold" 'BEGIN { exit !(t < th) }'; then
 		echo "coverage ${total}% is below the required ${threshold}%" >&2

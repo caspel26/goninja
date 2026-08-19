@@ -1,21 +1,18 @@
-// Package openapi is goninja's small OpenAPI 3.0 subset (plan section
-// 5.10/Fase 5) and the Mount/API/Resource plumbing that wires generated
-// resources onto an *http.ServeMux while merging their fragments into one
-// document. Split out of the root goninja package (Fase 7 ad hoc
-// architectural change) so callers who only need routing/docs types don't
-// pull in the whole runtime — every generated <Model>Resource still
-// implements openapi.Resource via its OpenAPI() method.
+// Package openapi holds the OpenAPI 3.0 document types (Schema, Parameter,
+// RequestBody, Response, Operation, PathItem, Spec) and the
+// OpenAPIProvider interface every generated <Model>Resource implements via
+// its OpenAPI() method. It's just the type library — the goninja.API type
+// (root package) is what builds a document out of these and mounts
+// resources on a router.
 package openapi
 
-import "net/http"
-
-// OpenAPI 3.0 types generated code builds fragments of (plan section
-// 5.10/Fase 5). Deliberately a small subset of the spec — just enough to
-// describe what goninja actually generates (object schemas, path items with
-// get/post/put/delete, query/path parameters, JSON request/response
-// bodies) — not a general-purpose OpenAPI library. Property/type shape
-// mirrors the JSON spec directly so Spec marshals to a valid document with
-// no custom MarshalJSON needed.
+// OpenAPI 3.0 types generated code builds fragments of. Deliberately a
+// small subset of the spec — just enough to describe what goninja actually
+// generates (object schemas, path items with get/post/put/delete,
+// query/path parameters, JSON request/response bodies) — not a
+// general-purpose OpenAPI library. Property/type shape mirrors the JSON
+// spec directly so Spec marshals to a valid document with no custom
+// MarshalJSON needed.
 
 // Schema is an OpenAPI schema object, or a $ref to one in
 // Components.Schemas. Ref is mutually exclusive with the rest of the
@@ -100,88 +97,7 @@ type Spec struct {
 
 // OpenAPIProvider is implemented by every generated <Model>Resource: it
 // returns the fragment of the document — the paths it mounts and the
-// schemas those paths reference — built from the same IR as the rest of
-// the generated file (plan section 5.10). API.Add merges the fragment in.
+// schemas those paths reference. goninja.API.Add merges the fragment in.
 type OpenAPIProvider interface {
 	OpenAPI() (paths map[string]*PathItem, schemas map[string]Schema)
-}
-
-// Resource is what every generated <Model>Resource implements: it mounts
-// its routes on a mux and describes itself as an OpenAPI fragment. Mount
-// takes a list of these so callers don't have to pair up a Register(mux)
-// call with an Add(doc) call by hand for every resource.
-type Resource interface {
-	Register(mux *http.ServeMux)
-	OpenAPIProvider
-}
-
-// Mount registers every resource's routes on mux and merges their OpenAPI
-// fragments into doc, in one call — the usual way to wire up all of an
-// app's generated resources at once:
-//
-//	doc := goninja.NewAPI("my api", "0.1.0")
-//	goninja.Mount(mux, doc, taskResource, authorResource, bookResource)
-//	goninja.MountDocs(mux, doc, "/docs", goninja.SwaggerUI())
-//
-// doc may be nil to skip OpenAPI entirely — routes are still mounted, just
-// nothing is recorded to document (and MountDocs/`/docs` should then not be
-// called at all). To leave one resource's routes mounted but keep it out
-// of the document specifically, call its BaseResource.ExcludeFromDocs()
-// before passing it here — Mount checks for that and skips doc.Add for it.
-func Mount(mux *http.ServeMux, doc *API, resources ...Resource) {
-	for _, r := range resources {
-		r.Register(mux)
-		if doc == nil {
-			continue
-		}
-		if x, ok := r.(interface{ DocsExcluded() bool }); ok && x.DocsExcluded() {
-			continue
-		}
-		doc.Add(r)
-	}
-}
-
-// API accumulates OpenAPI fragments across every resource registered with
-// it, producing one merged document. Construct with NewAPI, call Add once
-// per resource (alongside Resource.Register on the mux), then pass to
-// MountDocs.
-type API struct {
-	title, version string
-	paths          map[string]*PathItem
-	schemas        map[string]Schema
-}
-
-// NewAPI creates an empty API document with the given title/version
-// (OpenAPI's required top-level "info" fields).
-func NewAPI(title, version string) *API {
-	return &API{
-		title:   title,
-		version: version,
-		paths:   map[string]*PathItem{},
-		schemas: map[string]Schema{},
-	}
-}
-
-// Add merges p's OpenAPI fragment (its paths and the schemas they
-// reference) into the document. Call once per registered resource,
-// alongside its Register(mux) call.
-func (a *API) Add(p OpenAPIProvider) {
-	paths, schemas := p.OpenAPI()
-	for path, item := range paths {
-		a.paths[path] = item
-	}
-	for name, schema := range schemas {
-		a.schemas[name] = schema
-	}
-}
-
-// Spec returns the merged OpenAPI document built from every fragment
-// added so far.
-func (a *API) Spec() Spec {
-	return Spec{
-		OpenAPI:    "3.0.3",
-		Info:       Info{Title: a.title, Version: a.version},
-		Paths:      a.paths,
-		Components: Components{Schemas: a.schemas},
-	}
 }

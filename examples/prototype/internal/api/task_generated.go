@@ -80,6 +80,21 @@ var taskOrderableColumns = map[string]string{
 	"done":  "done",
 }
 
+// taskInvalidIDMsg/taskIDQuery/
+// taskContentTypeJSON/taskNotFoundDesc/
+// taskRetrieveRef are shared across this file's
+// handlers/resource methods (including OpenAPI() and its helpers below) to
+// avoid repeating the same literal per call site — package-level, prefixed
+// per model since several models can be generated into the same output
+// package.
+const (
+	taskInvalidIDMsg    = "invalid id"
+	taskIDQuery         = "id = ?"
+	taskContentTypeJSON = "application/json"
+	taskNotFoundDesc    = "Not found"
+	taskRetrieveRef     = "#/components/schemas/TaskRetrieve"
+)
+
 func toTaskList(m *models.Task) TaskList {
 	return TaskList{
 		ID:    m.ID,
@@ -181,7 +196,7 @@ func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, 
 	q := r.DB(ctx)
 
 	var m models.Task
-	if err := q.First(&m, "id = ?", id).Error; err != nil {
+	if err := q.First(&m, taskIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
@@ -213,7 +228,7 @@ func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*T
 		return nil, err
 	}
 	var m models.Task
-	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, taskIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
@@ -228,7 +243,7 @@ func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*T
 }
 
 func (r *TaskResource) Delete(ctx context.Context, id string) error {
-	res := r.DB(ctx).Where("id = ?", id).Delete(&models.Task{})
+	res := r.DB(ctx).Where(taskIDQuery, id).Delete(&models.Task{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -286,7 +301,7 @@ func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
 func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
@@ -338,7 +353,7 @@ func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
@@ -368,7 +383,7 @@ func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
@@ -388,12 +403,12 @@ func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// OpenAPI returns this resource's fragment of a merged OpenAPI document
-// (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
-// paths reference, built from the same IR as the rest of this file, so
-// they always match what List/Retrieve/Create/Update actually accept and
-// return. Pass this resource to an openapi.API's Add method (alongside its
-// Register(mux) call) to merge it in; see docsui.MountDocs.
+// OpenAPI returns this resource's fragment of a merged OpenAPI document —
+// the paths it mounts and the schemas those paths reference, built from
+// the same IR as the rest of this file, so they always match what
+// List/Retrieve/Create/Update actually accept and return. Pass this
+// resource to a goninja.API's Add method (alongside its Register(mux)
+// call) to merge it in, or just pass it to API.Mount; see API.MountDocs.
 func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
@@ -464,91 +479,150 @@ func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 
 	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &openapi.PathItem{}
+	if item := r.openAPIBasePathItem(cfg, tags, listParams); item != nil {
+		paths[basePath] = item
+	}
+	if item := r.openAPIItemPathItem(cfg, tags, idParam); item != nil {
+		paths[itemPath] = item
+	}
+	r.openAPIActionPaths(paths, basePath, idParam, tags)
+
+	return paths, schemas
+}
+
+// openAPIBasePathItem builds the list/create *openapi.PathItem for
+// "tasks" (nil if neither route is enabled) — split out of
+// OpenAPI() to keep its cognitive complexity in check.
+func (r *TaskResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "List tasks",
 			Tags:       tags,
 			Parameters: listParams,
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &openapi.Operation{
+		item.Post = &openapi.Operation{
 			Summary: "Create a task",
 			Tags:    tags,
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskCreate"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskCreate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"201": {Description: "Created", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
-	if basePathItem.Get != nil || basePathItem.Post != nil {
-		paths[basePath] = basePathItem
+	if item.Get == nil && item.Post == nil {
+		return nil
 	}
+	return item
+}
 
-	itemPathItem := &openapi.PathItem{}
+// openAPIItemPathItem builds the retrieve/update/delete *openapi.PathItem
+// for "tasks/{id}" (nil if none of the three routes is
+// enabled) — split out of OpenAPI() to keep its cognitive complexity in
+// check.
+func (r *TaskResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "Retrieve a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: taskNotFoundDesc},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &openapi.Operation{
+		item.Put = &openapi.Operation{
 			Summary:    "Update a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskUpdate"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskUpdate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/TaskRetrieve"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: taskNotFoundDesc},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &openapi.Operation{
+		item.Delete = &openapi.Operation{
 			Summary:    "Delete a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
-				"404": {Description: "Not found"},
+				"404": {Description: taskNotFoundDesc},
 			},
 		}
 	}
-	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
-		paths[itemPath] = itemPathItem
+	if item.Get == nil && item.Put == nil && item.Delete == nil {
+		return nil
 	}
+	return item
+}
 
-	return paths, schemas
+// openAPIActionPaths adds a path entry for every r.Actions() action that
+// carries a Summary, mounted the same way Register mounts it (base or
+// "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
+// cognitive complexity in check.
+func (r *TaskResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string) {
+	for _, a := range r.Actions() {
+		if a.Summary == "" {
+			continue
+		}
+		p := basePath
+		if a.Detail {
+			p += "/{id}"
+		}
+		if a.UrlPath != "" {
+			p += "/" + a.UrlPath
+		}
+		item, ok := paths[p]
+		if !ok {
+			item = &openapi.PathItem{}
+			paths[p] = item
+		}
+		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses}
+		if a.Detail {
+			op.Parameters = []openapi.Parameter{idParam}
+		}
+		switch a.Method {
+		case http.MethodGet:
+			item.Get = op
+		case http.MethodPost:
+			item.Post = op
+		case http.MethodPut:
+			item.Put = op
+		case http.MethodDelete:
+			item.Delete = op
+		}
+	}
 }
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
@@ -567,9 +641,10 @@ func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
-// no-op there.
+// API.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain API.Mount has a zero Config, so Protect is a
+// no-op there. Every Action declared via SetActions is mounted last, on the
+// same mux, at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
 func (r *TaskResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/tasks")
@@ -587,5 +662,15 @@ func (r *TaskResource) Register(mux *http.ServeMux) {
 	}
 	if cfg.RouteEnabled("delete") {
 		mux.HandleFunc("DELETE "+path+"/{id}", r.Protect("delete", cfg, r.deleteHandler))
+	}
+	for _, a := range r.Actions() {
+		p := path
+		if a.Detail {
+			p += "/{id}"
+		}
+		if a.UrlPath != "" {
+			p += "/" + a.UrlPath
+		}
+		mux.HandleFunc(a.Method+" "+p, r.Protect(a.Name, cfg, a.Handler))
 	}
 }

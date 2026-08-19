@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 profile="coverage.out"
-if [ ! -f "$profile" ]; then
+if [[ ! -f "$profile" ]]; then
 	echo "coverage.out not found — run scripts/coverage.sh first" >&2
 	exit 1
 fi

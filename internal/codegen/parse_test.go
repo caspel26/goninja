@@ -78,6 +78,225 @@ type Book struct {
 	}
 }
 
+func TestParseModels_ExprTypeVariants(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+import "time"
+
+type Author struct {
+	ID string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+}
+
+type Book struct {
+	ID        string     ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	CreatedAt time.Time  ` + "`json:\"created_at\" goninja:\"list,retrieve\"`" + `
+	Author    *Author    ` + "`json:\"author\" goninja:\"retrieve\"`" + `
+	Tags      []string   ` + "`json:\"tags\" goninja:\"list,retrieve\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "book.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+
+	var book Model
+	for _, m := range models {
+		if m.Name == "Book" {
+			book = m
+		}
+	}
+	if book.Name != "Book" {
+		t.Fatalf("Book model not found among %+v", models)
+	}
+
+	types := map[string]string{}
+	for _, f := range book.Fields {
+		types[f.Name] = f.GoType
+	}
+	if types["CreatedAt"] != "time.Time" {
+		t.Errorf("CreatedAt GoType = %q, want time.Time", types["CreatedAt"])
+	}
+	if types["Author"] != "*Author" {
+		t.Errorf("Author GoType = %q, want *Author", types["Author"])
+	}
+	if types["Tags"] != "[]string" {
+		t.Errorf("Tags GoType = %q, want []string", types["Tags"])
+	}
+}
+
+func TestParseModels_UnsupportedFieldTypeErrors(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Weird struct {
+	ID   string            ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Meta map[string]string ` + "`json:\"meta\" goninja:\"list,retrieve\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "weird.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ParseModels(dir); err == nil {
+		t.Fatal("ParseModels: err = nil, want an error for an unsupported field type")
+	}
+}
+
+func TestParseModels_UnsupportedTypeInsidePointerAndSlice(t *testing.T) {
+	cases := []string{
+		"*map[string]string",
+		"[]map[string]string",
+	}
+	for _, fieldType := range cases {
+		dir := t.TempDir()
+		src := `package models
+
+type Weird struct {
+	ID   string      ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Meta ` + fieldType + ` ` + "`json:\"meta\" goninja:\"list,retrieve\"`" + `
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "weird.go"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := ParseModels(dir); err == nil {
+			t.Errorf("ParseModels with field type %s: err = nil, want an error", fieldType)
+		}
+	}
+}
+
+func TestParseModels_UntaggedFieldsAndFieldsWithoutNamesAreSkipped(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Mixed struct {
+	ID       string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Untagged string
+	Embedded
+}
+
+type Embedded struct {
+	Value string
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "mixed.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+
+	var mixed Model
+	for _, m := range models {
+		if m.Name == "Mixed" {
+			mixed = m
+		}
+	}
+	if len(mixed.Fields) != 1 || mixed.Fields[0].Name != "ID" {
+		t.Errorf("expected only the ID field to be captured, got %+v", mixed.Fields)
+	}
+}
+
+func TestParseModels_JSONNameFallbacksAndOmitempty(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Widget struct {
+	ID       string ` + "`goninja:\"list,retrieve\"`" + `
+	Hidden   string ` + "`json:\"-\" goninja:\"list\"`" + `
+	Optional string ` + "`json:\"optional,omitempty\" goninja:\"list\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "widget.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	m := models[0]
+
+	names := map[string]string{}
+	for _, f := range m.Fields {
+		names[f.Name] = f.JSONName
+	}
+	if names["ID"] != "iD" {
+		t.Errorf(`ID JSONName = %q, want "iD" (no json tag -> lower() only lowercases the first rune)`, names["ID"])
+	}
+	if names["Hidden"] != "hidden" {
+		t.Errorf(`Hidden JSONName = %q, want "hidden" (json:"-" -> lowercased field name)`, names["Hidden"])
+	}
+	if names["Optional"] != "optional" {
+		t.Errorf(`Optional JSONName = %q, want "optional" (comma-suffixed json tag trimmed)`, names["Optional"])
+	}
+}
+
+func TestParseModels_NonStructTypeDeclsAreSkipped(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type ID = string
+
+type Task struct {
+	ID string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "task.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "Task" {
+		t.Errorf("expected only Task to be captured, got %+v", models)
+	}
+}
+
+func TestParseModels_TaggedFieldWithoutGoninjaTagIsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Task struct {
+	ID          string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	UntaggedButHasJSON string ` + "`json:\"other\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "task.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	m := models[0]
+	if len(m.Fields) != 1 || m.Fields[0].Name != "ID" {
+		t.Errorf("expected only the ID field to be captured, got %+v", m.Fields)
+	}
+}
+
+func TestParseModels_InvalidGoSyntaxErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "broken.go"), []byte("package models\nfunc {{{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ParseModels(dir); err == nil {
+		t.Fatal("ParseModels: err = nil, want a parse error")
+	}
+}
+
 func TestParseModels_NoTaggedStructs(t *testing.T) {
 	dir := t.TempDir()
 	src := `package models

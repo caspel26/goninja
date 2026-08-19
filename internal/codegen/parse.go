@@ -21,29 +21,54 @@ func ParseModels(dir string) ([]Model, error) {
 	var models []Model
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				gen, ok := decl.(*ast.GenDecl)
-				if !ok || gen.Tok != token.TYPE {
-					continue
-				}
-				for _, spec := range gen.Specs {
-					ts, ok := spec.(*ast.TypeSpec)
-					if !ok {
-						continue
-					}
-					st, ok := ts.Type.(*ast.StructType)
-					if !ok {
-						continue
-					}
-					model, hasTaggedField, err := parseStruct(ts.Name.Name, st)
-					if err != nil {
-						return nil, fmt.Errorf("codegen: %s: %w", ts.Name.Name, err)
-					}
-					if hasTaggedField {
-						models = append(models, model)
-					}
-				}
+			fileModels, err := parseFileModels(file)
+			if err != nil {
+				return nil, err
 			}
+			models = append(models, fileModels...)
+		}
+	}
+	return models, nil
+}
+
+// parseFileModels extracts every tagged struct type declared directly in
+// file (split out of ParseModels to keep each loop level's nesting, and
+// therefore cognitive complexity, in check).
+func parseFileModels(file *ast.File) ([]Model, error) {
+	var models []Model
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		declModels, err := parseGenDeclModels(gen)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, declModels...)
+	}
+	return models, nil
+}
+
+// parseGenDeclModels extracts every tagged struct type among gen's specs
+// (a `type (...)` block can declare more than one).
+func parseGenDeclModels(gen *ast.GenDecl) ([]Model, error) {
+	var models []Model
+	for _, spec := range gen.Specs {
+		ts, ok := spec.(*ast.TypeSpec)
+		if !ok {
+			continue
+		}
+		st, ok := ts.Type.(*ast.StructType)
+		if !ok {
+			continue
+		}
+		model, hasTaggedField, err := parseStruct(ts.Name.Name, st)
+		if err != nil {
+			return nil, fmt.Errorf("codegen: %s: %w", ts.Name.Name, err)
+		}
+		if hasTaggedField {
+			models = append(models, model)
 		}
 	}
 	return models, nil

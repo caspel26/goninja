@@ -12,7 +12,7 @@ func TestNotFound_Error(t *testing.T) {
 
 func TestValidationError_Error(t *testing.T) {
 	err := ValidationError{Fields: map[string]string{"name": "required"}}
-	if got := err.Error(); got == "" {
+	if err.Error() == "" {
 		t.Error("Error() = empty string, want a message containing the failed fields")
 	}
 }

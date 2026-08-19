@@ -1,14 +1,12 @@
-// Command prototype wires the generated code into a real net/http server
+// Command prototype wires generated code into a real net/http server
 // backed by a real Postgres database. It carries three models — Task,
-// Author, Book — precisely to prove two plan exit criteria at once:
+// Author, Book — to exercise the engine across more than one model and
+// prove CRUD works end to end against Postgres, with Retrieve
+// automatically preloading relation fields (Book.Author) without the
+// caller asking for it.
 //
-//   - Phase 1: the engine generalizes beyond one hand-tuned model.
-//   - Phase 2: CRUD works end to end against Postgres, and Retrieve
-//     automatically preloads relation fields (Book.Author) without the
-//     caller asking for it.
-//
-// Migrations are delegated to gorm's AutoMigrate, per plan section 6
-// (Phase 2) — goninja does not generate migrations.
+// Migrations are delegated to gorm's AutoMigrate — goninja does not
+// generate migrations.
 //
 // Run:
 //
@@ -28,10 +26,10 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/docsui"
 	"github.com/caspel26/goninja/examples/prototype/internal/api"
 	"github.com/caspel26/goninja/examples/prototype/models"
-	"github.com/caspel26/goninja/openapi"
 )
 
 func main() {
@@ -50,16 +48,19 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	doc := openapi.NewAPI("goninja prototype", "0.1.0")
+	app := goninja.NewAPI("goninja prototype", "0.1.0")
 
-	openapi.Mount(mux, doc,
+	bookAPI := api.NewBookResource(db)
+	bookAPI.SetActions(bookActions(bookAPI)...) // adds POST /books/{id}/publish; see bookpublish.go
+
+	app.Mount(mux,
 		api.NewTaskResource(db),
 		api.NewAuthorResource(db),
-		api.NewBookResource(db),
+		bookAPI,
 	)
 	// docsui.ReDoc() is a drop-in alternative to docsui.SwaggerUI() here.
-	docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())
+	app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 
-	log.Println("prototype listening on :8080 (/tasks, /authors, /books — GET, POST, GET/{id}, PUT/{id}, DELETE/{id}; /docs for OpenAPI/Swagger UI)")
+	log.Println("prototype listening on :8080 (/tasks, /authors, /books — GET, POST, GET/{id}, PUT/{id}, DELETE/{id}, POST/{id}/publish; /docs for OpenAPI/Swagger UI)")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

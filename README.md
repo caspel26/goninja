@@ -51,8 +51,8 @@ import (
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
 
+    "github.com/caspel26/goninja"
     "github.com/caspel26/goninja/docsui"
-    "github.com/caspel26/goninja/openapi"
     "myapp/internal/api"
     "myapp/models"
 )
@@ -62,13 +62,13 @@ func main() {
     db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
 
     mux := http.NewServeMux()
-    doc := openapi.NewAPI("Bookstore API", "0.1.0")
+    app := goninja.NewAPI("Bookstore API", "0.1.0")
 
-    openapi.Mount(mux, doc,
+    app.Mount(mux,
         api.NewAuthorResource(db),
         api.NewBookResource(db),
     )
-    docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())
+    app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 
     http.ListenAndServe(":8080", mux)
 }
@@ -76,9 +76,11 @@ func main() {
 
 That's a full `net/http` server: `GET/POST /books`, `GET/PUT/DELETE
 /books/{id}`, filtering, pagination, validation, and `/docs` — all from the
-struct at the top. `openapi.Mount` just does `Register(mux)` +
-`doc.Add(...)` for every resource passed to it, so you're never required to
-go through it either.
+struct at the top. `goninja.NewAPI` is the app's entry point; `api.Mount`
+just does `Register(mux)` + merges each resource's OpenAPI fragment for
+every resource passed to it, and `api.MountDocs` serves a rendered UI over
+the result — both are thin wrappers over the standalone `openapi`/`docsui`
+packages, so you're never required to go through them either.
 
 > **Status: pre-alpha.** The API above is the design target. What exists
 > today is an early prototype — see [Status](#status).
@@ -111,11 +113,11 @@ for any number of models, verified end to end against Postgres. A model's
 ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
 generates itself) — `examples/prototype`'s models use UUID IDs. Every
 generated resource also emits an OpenAPI 3.0 fragment from the same
-annotations, groupable under custom tags per resource; `docsui.MountDocs`
-merges every registered resource's fragment and serves it as JSON plus a
-docs UI — Swagger UI or ReDoc ship built in, both fully embedded with no
-external CDN, and the `DocsUI` interface it takes isn't hardcoded to
-either.
+annotations, groupable under custom tags per resource; `goninja.NewAPI`
+merges every resource mounted onto it and `api.MountDocs` serves the result
+as JSON plus a docs UI — Swagger UI or ReDoc ship built in, both fully
+embedded with no external CDN, and the `DocsUI` interface it takes isn't
+hardcoded to either.
 
 Try it (needs a running Postgres):
 
@@ -139,10 +141,10 @@ suite (`make cover` for coverage across all of them plus
 
 ### Generated docs UI
 
-One call — `docsui.MountDocs(mux, doc, "/docs", ui)` — serves the merged
-OpenAPI document as JSON plus a rendered UI, both fully embedded (no
-external CDN). `ui` is an interface, not a hardcoded renderer, so swapping
-one line swaps the whole UI:
+One call — `app.MountDocs(mux, "/docs", ui)` — serves the merged OpenAPI
+document as JSON plus a rendered UI, both fully embedded (no external CDN).
+`ui` is an interface, not a hardcoded renderer, so swapping one line swaps
+the whole UI:
 
 <table>
 <tr>
@@ -150,14 +152,14 @@ one line swaps the whole UI:
 
 **Swagger UI**<br><sub>`docsui.SwaggerUI()` — the default</sub>
 
-<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route, grouped by model" width="100%">
+<img src="docs/screenshots/swagger-ui.png" alt="Swagger UI listing every route grouped by model, including the custom POST /books/{id}/publish action alongside the generated Book CRUD routes" width="100%">
 
 </td>
 <td width="50%" align="center">
 
 **ReDoc**<br><sub>`docsui.ReDoc()` — a drop-in swap</sub>
 
-<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav and response samples" width="100%">
+<img src="docs/screenshots/redoc.png" alt="ReDoc three-pane layout with sidebar nav, showing the custom Publish a book action documented next to the generated Book routes" width="100%">
 
 </td>
 </tr>
@@ -165,12 +167,14 @@ one line swaps the whole UI:
 
 Every operation expands into its request/response schema, complete with
 example values generated straight from the model's fields — no hand-written
-OpenAPI, ever:
+OpenAPI, ever. The example below is the custom `POST /books/{id}/publish`
+action from [Adding custom routes beyond CRUD](#adding-custom-routes-beyond-crud) —
+declared with a `Summary`, it's documented exactly like a generated route:
 
 <p align="center">
-<img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books operation with its request body schema and response example" width="720">
+<img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books/{id}/publish operation, its id path parameter, and 200/404 responses" width="720">
 <br>
-<sub>An expanded <code>POST /books</code> operation in Swagger UI</sub>
+<sub>An expanded <code>POST /books/{id}/publish</code> action in Swagger UI</sub>
 </p>
 
 ### Extending a resource: hooks and overrides
@@ -181,8 +185,8 @@ embedding, so a wrapper's overrides only take effect once you point the
 embedded resource's `Self()` at it:
 
 ```go
-// resources.go — your file, never touched by the generator.
-package myapp
+// handlers/author.go — your file, never touched by the generator.
+package handlers
 
 import (
     "context"
@@ -249,11 +253,103 @@ the global default auth below — `create`/`update`/`delete` protected but a
 resource wants `retrieve` protected too, or one route punched public
 against the default.
 
+### Adding custom routes beyond CRUD
+
+`Action` + `BaseResource.SetActions` is goninja's equivalent of
+django-ninja-aio-crud's `@action`: declare extra endpoints as data — a
+`Name`, whether it's `Detail` (mounted under `<base>/{id}/<UrlPath>`) or
+collection-level (`<base>/<UrlPath>`), an HTTP `Method`, and a `Handler` —
+instead of writing route-mounting code by hand. `Register(mux)` mounts
+every action declared via `SetActions` automatically, after the generated
+CRUD routes, wrapped through the same `Protect` auth/middleware chain those
+get (`Action.Name` is the route name `ResourceConfig.Auth`'s
+`AlsoProtect`/`Public` can target, same as `"list"`/`"create"`/etc.); a
+`Summary` on the `Action` gets it documented in `OpenAPI()` too, no extra
+step. Unlike hooks and method overrides, this needs no wrapper type or
+`SetSelf` — an `Action` already carries its own `http.HandlerFunc`, so
+there's nothing to dispatch per request; call `SetActions` right after
+constructing the resource.
+
+Keep the handler logic in its own file, next to the model it operates on —
+a function taking the already-built resource and returning its `[]Action`
+— and call `SetActions` explicitly in `main.go` alongside the rest of your
+wiring, rather than hiding it behind a custom constructor. That way
+`main.go` stays the one place you can see everything that's actually
+mounted:
+
+```go
+// handlers/book.go — your file, never touched by the generator.
+package handlers
+
+import (
+    "net/http"
+
+    "github.com/caspel26/goninja"
+    "github.com/caspel26/goninja/openapi"
+    "myapp/internal/api"
+    "myapp/models"
+)
+
+// BookActions returns the custom actions to declare on r via SetActions.
+func BookActions(r *api.BookResource) []goninja.Action {
+    return []goninja.Action{
+        {
+            Name:    "publish",
+            Detail:  true,
+            Method:  http.MethodPost,
+            UrlPath: "publish",
+            Handler: publishHandler(r),
+            Summary: "Publish a book",
+            Responses: map[string]openapi.Response{"200": {Description: "OK"}},
+        },
+    }
+}
+
+func publishHandler(r *api.BookResource) http.HandlerFunc {
+    return func(w http.ResponseWriter, req *http.Request) {
+        ctx := req.Context()
+        id := req.PathValue("id")
+        if err := r.DB(ctx).Model(&models.Book{}).Where("id = ?", id).
+            Update("published", true).Error; err != nil {
+            goninja.Respond(w, r.ErrorMapper(), err)
+            return
+        }
+        out, err := r.Retrieve(ctx, id)
+        if err != nil {
+            goninja.Respond(w, r.ErrorMapper(), err)
+            return
+        }
+        goninja.RespondJSON(w, http.StatusOK, out)
+    }
+}
+```
+
+```go
+// main.go
+func main() {
+    // ... db setup, mux, app := goninja.NewAPI(...) ...
+
+    bookAPI := api.NewBookResource(db)
+    bookAPI.SetActions(handlers.BookActions(bookAPI)...)
+
+    app.Mount(mux, api.NewTaskResource(db), api.NewAuthorResource(db), bookAPI)
+}
+```
+
+`goninja.Respond`/`goninja.RespondJSON` inside the handler are the same
+helpers the generated handlers use for the error and success paths,
+respectively — `Respond` maps an error through an `ErrorMapper` and writes
+it as JSON; `RespondJSON` writes any value with a given status. Leave an
+`Action`'s `Summary` empty to mount it without documenting it, which is
+fine for an internal-only route. A runnable version of this (flattened
+into `package main` rather than a separate `handlers` package) lives in
+`examples/prototype/bookpublish.go`, wired into `main.go`.
+
 ### Global auth and middleware
 
-`goninja.MountWithConfig` is `openapi.Mount` plus a `Config`: a global
-default auth policy and generic middleware (logging, CORS, ...) applied to
-every resource passed to it.
+`api.MountWithConfig` is `api.Mount` plus a `Config`: a global default auth
+policy and generic middleware (logging, CORS, ...) applied to every
+resource passed to it.
 
 ```go
 authMW := func(next http.Handler) http.Handler {
@@ -275,7 +371,7 @@ cfg := goninja.Config{
     Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 }
 
-goninja.MountWithConfig(mux, doc, cfg,
+app.MountWithConfig(mux, cfg,
     api.NewAuthorResource(db),
     api.NewBookResource(db),
 )
@@ -291,9 +387,9 @@ resource that reads the authenticated user — typically inside
 retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
 being just `ID() string`; goninja never constructs one itself.
 
-Plain `openapi.Mount` still works exactly as before — a resource it
-mounts gets a zero `Config`, so nothing is protected and no middleware
-runs, unless you switch that resource to `goninja.MountWithConfig`.
+Plain `api.Mount` still works exactly as before — a resource it mounts gets
+a zero `Config`, so nothing is protected and no middleware runs, unless you
+switch that resource to `api.MountWithConfig`.
 
 ### Relations: nested or by ID
 
