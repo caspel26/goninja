@@ -99,6 +99,21 @@ var bookOrderableColumns = map[string]string{
 	"created_at": "created_at",
 }
 
+// bookInvalidIDMsg/bookIDQuery/
+// bookContentTypeJSON/bookNotFoundDesc/
+// bookRetrieveRef are shared across this file's
+// handlers/resource methods (including OpenAPI() and its helpers below) to
+// avoid repeating the same literal per call site — package-level, prefixed
+// per model since several models can be generated into the same output
+// package.
+const (
+	bookInvalidIDMsg    = "invalid id"
+	bookIDQuery         = "id = ?"
+	bookContentTypeJSON = "application/json"
+	bookNotFoundDesc    = "Not found"
+	bookRetrieveRef     = "#/components/schemas/BookRetrieve"
+)
+
 func toBookList(m *models.Book) BookList {
 	return BookList{
 		ID:        m.ID,
@@ -220,7 +235,7 @@ func (r *BookResource) Retrieve(ctx context.Context, id string) (*BookRetrieve, 
 	q = q.Preload("Author")
 
 	var m models.Book
-	if err := q.First(&m, "id = ?", id).Error; err != nil {
+	if err := q.First(&m, bookIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "book", ID: id}
 		}
@@ -254,7 +269,7 @@ func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*B
 		return nil, err
 	}
 	var m models.Book
-	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, bookIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "book", ID: id}
 		}
@@ -271,7 +286,7 @@ func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*B
 }
 
 func (r *BookResource) Delete(ctx context.Context, id string) error {
-	res := r.DB(ctx).Where("id = ?", id).Delete(&models.Book{})
+	res := r.DB(ctx).Where(bookIDQuery, id).Delete(&models.Book{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -359,7 +374,7 @@ func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
 func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
 		return
 	}
 
@@ -411,7 +426,7 @@ func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
 func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
 		return
 	}
 
@@ -441,7 +456,7 @@ func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
 		return
 	}
 
@@ -552,90 +567,119 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 
 	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &openapi.PathItem{}
+	if item := r.openAPIBasePathItem(cfg, tags, listParams); item != nil {
+		paths[basePath] = item
+	}
+	if item := r.openAPIItemPathItem(cfg, tags, idParam); item != nil {
+		paths[itemPath] = item
+	}
+	r.openAPIActionPaths(paths, basePath, idParam, tags)
+
+	return paths, schemas
+}
+
+// openAPIBasePathItem builds the list/create *openapi.PathItem for
+// "books" (nil if neither route is enabled) — split out of
+// OpenAPI() to keep its cognitive complexity in check.
+func (r *BookResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "List books",
 			Tags:       tags,
 			Parameters: listParams,
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &openapi.Operation{
+		item.Post = &openapi.Operation{
 			Summary: "Create a book",
 			Tags:    tags,
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookCreate"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookCreate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"201": {Description: "Created", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
 				}},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
-	if basePathItem.Get != nil || basePathItem.Post != nil {
-		paths[basePath] = basePathItem
+	if item.Get == nil && item.Post == nil {
+		return nil
 	}
+	return item
+}
 
-	itemPathItem := &openapi.PathItem{}
+// openAPIItemPathItem builds the retrieve/update/delete *openapi.PathItem
+// for "books/{id}" (nil if none of the three routes is
+// enabled) — split out of OpenAPI() to keep its cognitive complexity in
+// check.
+func (r *BookResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "Retrieve a book",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: bookNotFoundDesc},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &openapi.Operation{
+		item.Put = &openapi.Operation{
 			Summary:    "Update a book",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookUpdate"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookUpdate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: bookNotFoundDesc},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &openapi.Operation{
+		item.Delete = &openapi.Operation{
 			Summary:    "Delete a book",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
-				"404": {Description: "Not found"},
+				"404": {Description: bookNotFoundDesc},
 			},
 		}
 	}
-	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
-		paths[itemPath] = itemPathItem
+	if item.Get == nil && item.Put == nil && item.Delete == nil {
+		return nil
 	}
+	return item
+}
 
+// openAPIActionPaths adds a path entry for every r.Actions() action that
+// carries a Summary, mounted the same way Register mounts it (base or
+// "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
+// cognitive complexity in check.
+func (r *BookResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string) {
 	for _, a := range r.Actions() {
 		if a.Summary == "" {
 			continue
@@ -667,8 +711,6 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 			item.Delete = op
 		}
 	}
-
-	return paths, schemas
 }
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same

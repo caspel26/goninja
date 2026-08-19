@@ -35,13 +35,13 @@ place right after) on failure. */}}
 {{- if eq .Model.IDGoType "int64"}}
 	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
 	if err != nil {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: {{.Model.NameLower}}InvalidIDMsg})
 		return
 	}
 {{- else}}
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: {{.Model.NameLower}}InvalidIDMsg})
 		return
 	}
 {{- end}}
@@ -116,6 +116,21 @@ var {{.Model.NameLower}}OrderableColumns = map[string]string{
 	"{{.JSONName}}": "{{.JSONName}}",
 {{- end}}
 }
+
+// {{.Model.NameLower}}InvalidIDMsg/{{.Model.NameLower}}IDQuery/
+// {{.Model.NameLower}}ContentTypeJSON/{{.Model.NameLower}}NotFoundDesc/
+// {{.Model.NameLower}}RetrieveRef are shared across this file's
+// handlers/resource methods (including OpenAPI() and its helpers below) to
+// avoid repeating the same literal per call site — package-level, prefixed
+// per model since several models can be generated into the same output
+// package.
+const (
+	{{.Model.NameLower}}InvalidIDMsg    = "invalid id"
+	{{.Model.NameLower}}IDQuery         = "id = ?"
+	{{.Model.NameLower}}ContentTypeJSON = "application/json"
+	{{.Model.NameLower}}NotFoundDesc    = "Not found"
+	{{.Model.NameLower}}RetrieveRef     = "#/components/schemas/{{.Model.Name}}Retrieve"
+)
 
 func to{{.Model.Name}}List(m *{{$mt}}) {{.Model.Name}}List {
 	return {{.Model.Name}}List{
@@ -243,7 +258,7 @@ func (r *{{.Model.Name}}Resource) Retrieve(ctx context.Context, id {{$idType}}) 
 {{- end}}
 
 	var m {{$mt}}
-	if err := q.First(&m, "id = ?", id).Error; err != nil {
+	if err := q.First(&m, {{.Model.NameLower}}IDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "{{.Model.NameLower}}", ID: id}
 		}
@@ -278,7 +293,7 @@ func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id {{$idType}}, in
 		return nil, err
 	}
 	var m {{$mt}}
-	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, {{.Model.NameLower}}IDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "{{.Model.NameLower}}", ID: id}
 		}
@@ -294,7 +309,7 @@ func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id {{$idType}}, in
 }
 
 func (r *{{.Model.Name}}Resource) Delete(ctx context.Context, id {{$idType}}) error {
-	res := r.DB(ctx).Where("id = ?", id).Delete(&{{$mt}}{})
+	res := r.DB(ctx).Where({{.Model.NameLower}}IDQuery, id).Delete(&{{$mt}}{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -583,90 +598,119 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 
 	paths := map[string]*openapi.PathItem{}
 
-	basePathItem := &openapi.PathItem{}
+	if item := r.openAPIBasePathItem(cfg, tags, listParams); item != nil {
+		paths[basePath] = item
+	}
+	if item := r.openAPIItemPathItem(cfg, tags, idParam); item != nil {
+		paths[itemPath] = item
+	}
+	r.openAPIActionPaths(paths, basePath, idParam, tags)
+
+	return paths, schemas
+}
+
+// openAPIBasePathItem builds the list/create *openapi.PathItem for
+// "{{.Model.NameLower}}s" (nil if neither route is enabled) — split out of
+// OpenAPI() to keep its cognitive complexity in check.
+func (r *{{.Model.Name}}Resource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("list") {
-		basePathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "List {{.Model.NameLower}}s",
 			Tags:       tags,
 			Parameters: listParams,
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}ListEnvelope"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}ListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled("create") {
-		basePathItem.Post = &openapi.Operation{
+		item.Post = &openapi.Operation{
 			Summary: "Create a {{.Model.NameLower}}",
 			Tags:    tags,
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Create"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Create"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"201": {Description: "Created", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: {{.Model.NameLower}}RetrieveRef}},
 				}},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
-	if basePathItem.Get != nil || basePathItem.Post != nil {
-		paths[basePath] = basePathItem
+	if item.Get == nil && item.Post == nil {
+		return nil
 	}
+	return item
+}
 
-	itemPathItem := &openapi.PathItem{}
+// openAPIItemPathItem builds the retrieve/update/delete *openapi.PathItem
+// for "{{.Model.NameLower}}s/{id}" (nil if none of the three routes is
+// enabled) — split out of OpenAPI() to keep its cognitive complexity in
+// check.
+func (r *{{.Model.Name}}Resource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter) *openapi.PathItem {
+	item := &openapi.PathItem{}
 	if cfg.RouteEnabled("retrieve") {
-		itemPathItem.Get = &openapi.Operation{
+		item.Get = &openapi.Operation{
 			Summary:    "Retrieve a {{.Model.NameLower}}",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: {{.Model.NameLower}}RetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: {{.Model.NameLower}}NotFoundDesc},
 			},
 		}
 	}
 	if cfg.RouteEnabled("update") {
-		itemPathItem.Put = &openapi.Operation{
+		item.Put = &openapi.Operation{
 			Summary:    "Update a {{.Model.NameLower}}",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Update"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Update"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					"application/json": {Schema: openapi.Schema{Ref: "#/components/schemas/{{.Model.Name}}Retrieve"}},
+					{{.Model.NameLower}}ContentTypeJSON: {Schema: openapi.Schema{Ref: {{.Model.NameLower}}RetrieveRef}},
 				}},
-				"404": {Description: "Not found"},
+				"404": {Description: {{.Model.NameLower}}NotFoundDesc},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
 	if cfg.RouteEnabled("delete") {
-		itemPathItem.Delete = &openapi.Operation{
+		item.Delete = &openapi.Operation{
 			Summary:    "Delete a {{.Model.NameLower}}",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
-				"404": {Description: "Not found"},
+				"404": {Description: {{.Model.NameLower}}NotFoundDesc},
 			},
 		}
 	}
-	if itemPathItem.Get != nil || itemPathItem.Put != nil || itemPathItem.Delete != nil {
-		paths[itemPath] = itemPathItem
+	if item.Get == nil && item.Put == nil && item.Delete == nil {
+		return nil
 	}
+	return item
+}
 
+// openAPIActionPaths adds a path entry for every r.Actions() action that
+// carries a Summary, mounted the same way Register mounts it (base or
+// "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
+// cognitive complexity in check.
+func (r *{{.Model.Name}}Resource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string) {
 	for _, a := range r.Actions() {
 		if a.Summary == "" {
 			continue
@@ -698,8 +742,6 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 			item.Delete = op
 		}
 	}
-
-	return paths, schemas
 }
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
