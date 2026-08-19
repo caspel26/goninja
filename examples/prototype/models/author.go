@@ -5,7 +5,7 @@ package models
 // exit criterion). Book (below) references it as a relation, proving
 // automatic Preload on Retrieve (Phase 2 exit criterion).
 type Author struct {
-	ID   int64  `gorm:"primaryKey" json:"id" goninja:"list,retrieve"`
-	Name string `json:"name" goninja:"list,retrieve,create,update" validate:"required,max=120"`
+	ID   string `gorm:"primaryKey;type:uuid" json:"id" goninja:"list,retrieve"`
+	Name string `json:"name" goninja:"list,retrieve,create,update,filter" validate:"required,max=120"`
 	Bio  string `json:"bio" goninja:"retrieve,create,update" validate:"max=2000"`
 }

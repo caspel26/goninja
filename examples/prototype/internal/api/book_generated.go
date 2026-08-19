@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/caspel26/goninja"
 	"gorm.io/gorm"
@@ -15,54 +17,104 @@ import (
 	"github.com/caspel26/goninja/examples/prototype/models"
 )
 
-// BookListSchema is the shape returned by GET /books.
-type BookListSchema struct {
-	ID       int64  `json:"id"`
-	Title    string `json:"title"`
-	AuthorID int64  `json:"author_id"`
+// BookList is the shape returned by GET /books,
+// one item per row of the "items" field of goninja.ListEnvelope.
+type BookList struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	AuthorID  string    `json:"author_id"`
+	Price     float64   `json:"price"`
+	Published bool      `json:"published"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// BookRetrieveSchema is the shape returned by GET /books/{id}.
+// BookRetrieve is the shape returned by GET /books/{id}.
 // A relation field (e.g. Author) is nested as that model's own
-// RetrieveSchema, never the raw related struct — output schemas are
+// Retrieve type, never the raw related struct — output types are
 // always separate from the model, so a sensitive field can't leak into a
 // response just because it exists on the related struct either.
-type BookRetrieveSchema struct {
-	ID       int64                `json:"id"`
-	Title    string               `json:"title"`
-	AuthorID int64                `json:"author_id"`
-	Author   AuthorRetrieveSchema `json:"author"`
+type BookRetrieve struct {
+	ID        string         `json:"id"`
+	Title     string         `json:"title"`
+	AuthorID  string         `json:"author_id"`
+	Author    AuthorRetrieve `json:"author"`
+	Price     float64        `json:"price"`
+	Published bool           `json:"published"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
-// BookCreateSchema is the shape accepted by POST /books.
+// BookCreate is the shape accepted by POST /books.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
 // the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
-type BookCreateSchema struct {
-	Title    string `json:"title" validate:"required,max=200"`
-	AuthorID int64  `json:"author_id" validate:"required,gt=0"`
+type BookCreate struct {
+	Title     string  `json:"title" validate:"required,max=200"`
+	AuthorID  string  `json:"author_id" validate:"required,uuid4"`
+	Price     float64 `json:"price" validate:"min=0"`
+	Published bool    `json:"published"`
 }
 
-// BookUpdateSchema is the shape accepted by PUT /books/{id}.
-type BookUpdateSchema struct {
-	Title    string `json:"title" validate:"required,max=200"`
-	AuthorID int64  `json:"author_id" validate:"required,gt=0"`
+// BookUpdate is the shape accepted by PUT /books/{id}.
+type BookUpdate struct {
+	Title     string  `json:"title" validate:"required,max=200"`
+	AuthorID  string  `json:"author_id" validate:"required,uuid4"`
+	Price     float64 `json:"price" validate:"min=0"`
+	Published bool    `json:"published"`
 }
 
-func toBookListSchema(m *models.Book) BookListSchema {
-	return BookListSchema{
-		ID:       m.ID,
-		Title:    m.Title,
-		AuthorID: m.AuthorID,
+// BookFilters is the shape parsed from GET /books
+// query parameters (plan section 5.5/Fase 4): one exact-match pointer field
+// per `filter`-tagged model field, plus Min/Max range pointers for numeric
+// ones, plus Limit/Offset/Order shared by every model's list query. A nil
+// field means "no filter" — List only adds a WHERE clause for the ones the
+// caller actually set.
+type BookFilters struct {
+	AuthorID  *string
+	Price     *float64
+	PriceMin  *float64
+	PriceMax  *float64
+	Published *bool
+	Limit     int
+	Offset    int
+	// Order is a list-field JSON name, optionally "-"-prefixed for
+	// descending (e.g. "-created_at"). Unknown field names are ignored.
+	Order string
+}
+
+// bookOrderableColumns whitelists which query values
+// "order" accepts — every list field, keyed and valued by its JSON name
+// (assumed to match the actual DB column, per this model's `json` tags).
+// Only ever indexed with a known key, never interpolated from user input
+// directly, so this doubles as the SQL-injection guard for ORDER BY.
+var bookOrderableColumns = map[string]string{
+	"id":         "id",
+	"title":      "title",
+	"author_id":  "author_id",
+	"price":      "price",
+	"published":  "published",
+	"created_at": "created_at",
+}
+
+func toBookList(m *models.Book) BookList {
+	return BookList{
+		ID:        m.ID,
+		Title:     m.Title,
+		AuthorID:  m.AuthorID,
+		Price:     m.Price,
+		Published: m.Published,
+		CreatedAt: m.CreatedAt,
 	}
 }
 
-func toBookRetrieveSchema(m *models.Book) BookRetrieveSchema {
-	return BookRetrieveSchema{
-		ID:       m.ID,
-		Title:    m.Title,
-		AuthorID: m.AuthorID,
-		Author:   toAuthorRetrieveSchema(&m.Author),
+func toBookRetrieve(m *models.Book) BookRetrieve {
+	return BookRetrieve{
+		ID:        m.ID,
+		Title:     m.Title,
+		AuthorID:  m.AuthorID,
+		Author:    toAuthorRetrieve(&m.Author),
+		Price:     m.Price,
+		Published: m.Published,
+		CreatedAt: m.CreatedAt,
 	}
 }
 
@@ -80,44 +132,85 @@ func NewBookResource(db *gorm.DB) *BookResource {
 	return r
 }
 
-func (r *BookResource) List(ctx context.Context) ([]BookListSchema, error) {
+// List applies f's filters/ordering, counts the total matching rows before
+// paginating, and returns Limit/Offset rows plus that total — never a
+// Preload, by construction, which is why list/retrieve are separate tags
+// (plan section 5.5): it's the guarantee against N+1, not an
+// implementation detail.
+func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int64, error) {
+	q := r.DB(ctx).Model(&models.Book{})
+	if f.AuthorID != nil {
+		q = q.Where("author_id = ?", *f.AuthorID)
+	}
+	if f.Price != nil {
+		q = q.Where("price = ?", *f.Price)
+	}
+	if f.PriceMin != nil {
+		q = q.Where("price >= ?", *f.PriceMin)
+	}
+	if f.PriceMax != nil {
+		q = q.Where("price <= ?", *f.PriceMax)
+	}
+	if f.Published != nil {
+		q = q.Where("published = ?", *f.Published)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if f.Order != "" {
+		field, desc := strings.CutPrefix(f.Order, "-")
+		if col, ok := bookOrderableColumns[field]; ok {
+			dir := "ASC"
+			if desc {
+				dir = "DESC"
+			}
+			q = q.Order(col + " " + dir)
+		}
+	}
+
 	var items []models.Book
-	if err := r.DB(ctx).Find(&items).Error; err != nil {
-		return nil, err
+	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+		return nil, 0, err
 	}
-	out := make([]BookListSchema, 0, len(items))
+	out := make([]BookList, 0, len(items))
 	for i := range items {
-		out = append(out, toBookListSchema(&items[i]))
+		out = append(out, toBookList(&items[i]))
 	}
-	return out, nil
+	return out, total, nil
 }
 
-// Retrieve preloads every relation field carried on the retrieve schema —
-// list never does, by construction, which is why list/retrieve are
-// separate tags (plan section 5.5): it's the guarantee against N+1, not an
-// implementation detail.
-func (r *BookResource) Retrieve(ctx context.Context, id int64) (*BookRetrieveSchema, error) {
+// Retrieve preloads every relation field carried on the retrieve type —
+// list never does, by construction (see List above).
+func (r *BookResource) Retrieve(ctx context.Context, id string) (*BookRetrieve, error) {
 	q := r.DB(ctx)
 	q = q.Preload("Author")
 
 	var m models.Book
-	if err := q.First(&m, id).Error; err != nil {
+	if err := q.First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "book", ID: id}
 		}
 		return nil, err
 	}
-	out := toBookRetrieveSchema(&m)
+	out := toBookRetrieve(&m)
 	return &out, nil
 }
 
-func (r *BookResource) Create(ctx context.Context, in BookCreateSchema) (*BookRetrieveSchema, error) {
+func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	m := models.Book{
-		Title:    in.Title,
-		AuthorID: in.AuthorID,
+		Title:     in.Title,
+		AuthorID:  in.AuthorID,
+		Price:     in.Price,
+		Published: in.Published,
+	}
+	if m.ID == "" {
+		m.ID = goninja.NewUUID()
 	}
 	if err := r.DB(ctx).Create(&m).Error; err != nil {
 		return nil, err
@@ -125,12 +218,12 @@ func (r *BookResource) Create(ctx context.Context, in BookCreateSchema) (*BookRe
 	return r.Retrieve(ctx, m.ID)
 }
 
-func (r *BookResource) Update(ctx context.Context, id int64, in BookUpdateSchema) (*BookRetrieveSchema, error) {
+func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*BookRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
 	var m models.Book
-	if err := r.DB(ctx).First(&m, id).Error; err != nil {
+	if err := r.DB(ctx).First(&m, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, goninja.NotFound{Resource: "book", ID: id}
 		}
@@ -138,14 +231,16 @@ func (r *BookResource) Update(ctx context.Context, id int64, in BookUpdateSchema
 	}
 	m.Title = in.Title
 	m.AuthorID = in.AuthorID
+	m.Price = in.Price
+	m.Published = in.Published
 	if err := r.DB(ctx).Save(&m).Error; err != nil {
 		return nil, err
 	}
 	return r.Retrieve(ctx, id)
 }
 
-func (r *BookResource) Delete(ctx context.Context, id int64) error {
-	res := r.DB(ctx).Delete(&models.Book{}, id)
+func (r *BookResource) Delete(ctx context.Context, id string) error {
+	res := r.DB(ctx).Where("id = ?", id).Delete(&models.Book{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -155,21 +250,88 @@ func (r *BookResource) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// parseBookFilters reads BookFilters from the request's
+// query parameters, keyed by each field's JSON name (plus "_min"/"_max" for
+// numeric range filters). A value that fails to parse is a BadRequest.
+func parseBookFilters(req *http.Request) (BookFilters, error) {
+	q := req.URL.Query()
+	var f BookFilters
+
+	if v := q.Get("author_id"); v != "" {
+		parsed := v
+		f.AuthorID = &parsed
+	}
+
+	if v := q.Get("price"); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid price"}
+		}
+		parsed := float64(n)
+		f.Price = &parsed
+	}
+	if v := q.Get("price_min"); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid price_min"}
+		}
+		parsed := float64(n)
+		f.PriceMin = &parsed
+	}
+	if v := q.Get("price_max"); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid price_max"}
+		}
+		parsed := float64(n)
+		f.PriceMax = &parsed
+	}
+
+	if v := q.Get("published"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid published"}
+		}
+		f.Published = &parsed
+	}
+
+	limit, offset, err := goninja.ParseLimitOffset(q)
+	if err != nil {
+		return f, err
+	}
+	f.Limit = limit
+	f.Offset = offset
+	f.Order = q.Get("order")
+
+	return f, nil
+}
+
 func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	items, err := r.List(req.Context())
+	f, err := parseBookFilters(req)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, items)
+	items, total, err := r.List(req.Context(), f)
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[BookList]{
+		Items:  items,
+		Total:  total,
+		Limit:  f.Limit,
+		Offset: f.Offset,
+	})
 }
 
 func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	out, err := r.Retrieve(req.Context(), id)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
@@ -179,7 +341,7 @@ func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
-	var in BookCreateSchema
+	var in BookCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -193,12 +355,13 @@ func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
-	var in BookUpdateSchema
+
+	var in BookUpdate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
@@ -212,11 +375,12 @@ func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
-	id, err := strconv.ParseInt(req.PathValue("id"), 10, 64)
-	if err != nil {
+	id := req.PathValue("id")
+	if id == "" {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid id"})
 		return
 	}
+
 	if err := r.Delete(req.Context(), id); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
