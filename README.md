@@ -50,8 +50,8 @@ import (
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
 
+    "github.com/caspel26/goninja"
     "github.com/caspel26/goninja/docsui"
-    "github.com/caspel26/goninja/openapi"
     "myapp/internal/api"
     "myapp/models"
 )
@@ -61,13 +61,13 @@ func main() {
     db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
 
     mux := http.NewServeMux()
-    doc := openapi.NewAPI("Bookstore API", "0.1.0")
+    app := goninja.NewAPI("Bookstore API", "0.1.0")
 
-    openapi.Mount(mux, doc,
+    app.Mount(mux,
         api.NewAuthorResource(db),
         api.NewBookResource(db),
     )
-    docsui.MountDocs(mux, doc, "/docs", docsui.SwaggerUI())
+    app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 
     http.ListenAndServe(":8080", mux)
 }
@@ -75,9 +75,11 @@ func main() {
 
 That's a full `net/http` server: `GET/POST /books`, `GET/PUT/DELETE
 /books/{id}`, filtering, pagination, validation, and `/docs` — all from the
-struct at the top. `openapi.Mount` just does `Register(mux)` +
-`doc.Add(...)` for every resource passed to it, so you're never required to
-go through it either.
+struct at the top. `goninja.NewAPI` is the app's entry point; `api.Mount`
+just does `Register(mux)` + merges each resource's OpenAPI fragment for
+every resource passed to it, and `api.MountDocs` serves a rendered UI over
+the result — both are thin wrappers over the standalone `openapi`/`docsui`
+packages, so you're never required to go through them either.
 
 > **Status: pre-alpha.** The API above is the design target. What exists
 > today is an early prototype — see [Status](#status).
@@ -110,11 +112,11 @@ for any number of models, verified end to end against Postgres. A model's
 ID field can be `int64` (DB auto-increment) or `string` (a UUID goninja
 generates itself) — `examples/prototype`'s models use UUID IDs. Every
 generated resource also emits an OpenAPI 3.0 fragment from the same
-annotations, groupable under custom tags per resource; `docsui.MountDocs`
-merges every registered resource's fragment and serves it as JSON plus a
-docs UI — Swagger UI or ReDoc ship built in, both fully embedded with no
-external CDN, and the `DocsUI` interface it takes isn't hardcoded to
-either.
+annotations, groupable under custom tags per resource; `goninja.NewAPI`
+merges every resource mounted onto it and `api.MountDocs` serves the result
+as JSON plus a docs UI — Swagger UI or ReDoc ship built in, both fully
+embedded with no external CDN, and the `DocsUI` interface it takes isn't
+hardcoded to either.
 
 Try it (needs a running Postgres):
 
@@ -138,10 +140,10 @@ suite (`make cover` for coverage across all of them plus
 
 ### Generated docs UI
 
-One call — `docsui.MountDocs(mux, doc, "/docs", ui)` — serves the merged
-OpenAPI document as JSON plus a rendered UI, both fully embedded (no
-external CDN). `ui` is an interface, not a hardcoded renderer, so swapping
-one line swaps the whole UI:
+One call — `app.MountDocs(mux, "/docs", ui)` — serves the merged OpenAPI
+document as JSON plus a rendered UI, both fully embedded (no external CDN).
+`ui` is an interface, not a hardcoded renderer, so swapping one line swaps
+the whole UI:
 
 <table>
 <tr>
@@ -250,9 +252,9 @@ against the default.
 
 ### Global auth and middleware
 
-`goninja.MountWithConfig` is `openapi.Mount` plus a `Config`: a global
-default auth policy and generic middleware (logging, CORS, ...) applied to
-every resource passed to it.
+`api.MountWithConfig` is `api.Mount` plus a `Config`: a global default auth
+policy and generic middleware (logging, CORS, ...) applied to every
+resource passed to it.
 
 ```go
 authMW := func(next http.Handler) http.Handler {
@@ -274,7 +276,7 @@ cfg := goninja.Config{
     Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 }
 
-goninja.MountWithConfig(mux, doc, cfg,
+app.MountWithConfig(mux, cfg,
     api.NewAuthorResource(db),
     api.NewBookResource(db),
 )
@@ -290,9 +292,9 @@ resource that reads the authenticated user — typically inside
 retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
 being just `ID() string`; goninja never constructs one itself.
 
-Plain `openapi.Mount` still works exactly as before — a resource it
-mounts gets a zero `Config`, so nothing is protected and no middleware
-runs, unless you switch that resource to `goninja.MountWithConfig`.
+Plain `api.Mount` still works exactly as before — a resource it mounts gets
+a zero `Config`, so nothing is protected and no middleware runs, unless you
+switch that resource to `api.MountWithConfig`.
 
 ### Relations: nested or by ID
 

@@ -461,12 +461,12 @@ func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// OpenAPI returns this resource's fragment of a merged OpenAPI document
-// (plan section 5.10/Fase 5) — the paths it mounts and the schemas those
-// paths reference, built from the same IR as the rest of this file, so
-// they always match what List/Retrieve/Create/Update actually accept and
-// return. Pass this resource to an openapi.API's Add method (alongside its
-// Register(mux) call) to merge it in; see docsui.MountDocs.
+// OpenAPI returns this resource's fragment of a merged OpenAPI document —
+// the paths it mounts and the schemas those paths reference, built from
+// the same IR as the rest of this file, so they always match what
+// List/Retrieve/Create/Update actually accept and return. Pass this
+// resource to a goninja.API's Add method (alongside its Register(mux)
+// call) to merge it in, or just pass it to API.Mount; see API.MountDocs.
 func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
@@ -655,8 +655,8 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
-// goninja.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
-// resource mounted via plain openapi.Mount has a zero Config, so Protect is a
+// API.MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain API.Mount has a zero Config, so Protect is a
 // no-op there.
 func (r *BookResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()

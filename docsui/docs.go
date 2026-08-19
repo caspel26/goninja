@@ -1,8 +1,8 @@
-// Package docsui renders a documentation viewer (Swagger UI or ReDoc,
-// both vendored/embedded — no external CDN) for an openapi.API's merged
-// document. Split out of the root goninja package (Fase 7 ad hoc
-// architectural change) since it only needs the openapi package, not the
-// whole runtime.
+// Package docsui renders a documentation viewer (Swagger UI or ReDoc, both
+// vendored/embedded — no external CDN) for a merged OpenAPI document.
+// MountDocs takes a SpecSource interface rather than a concrete document
+// type so this package never has to import goninja.API's package directly
+// (goninja already imports docsui, so importing back would cycle).
 package docsui
 
 import (
@@ -15,10 +15,9 @@ import (
 )
 
 // DocsUI renders a documentation viewer for a mounted OpenAPI document.
-// goninja ships SwaggerUI and ReDoc (plan section 6/Fase 5); implement
-// DocsUI yourself to plug in something else — a hosted viewer, a custom
-// static-site generator, whatever — MountDocs never hardcodes which
-// renderer backs /docs.
+// goninja ships SwaggerUI and ReDoc; implement DocsUI yourself to plug in
+// something else — a hosted viewer, a custom static-site generator,
+// whatever — MountDocs never hardcodes which renderer backs /docs.
 type DocsUI interface {
 	// Index returns the HTML page that boots this UI against specPath
 	// (the "<path>/openapi.json" route MountDocs mounts alongside it).
@@ -35,6 +34,14 @@ type DocsAsset struct {
 	ContentType string
 }
 
+// SpecSource is anything that can produce a merged OpenAPI document —
+// goninja.API (root package) is the usual one, but MountDocs only needs
+// this narrow interface rather than importing that concrete type, which
+// would cycle back to root (see the package doc comment).
+type SpecSource interface {
+	Spec() openapi.Spec
+}
+
 // MountDocs serves api's merged OpenAPI document and a documentation UI at
 // path (e.g. "/docs"): the spec as JSON at "<path>/openapi.json", the UI
 // itself at "<path>/" (a request to "<path>" without the trailing slash
@@ -43,7 +50,7 @@ type DocsAsset struct {
 // "<path>/" is the page's actual base URL). ui selects the renderer —
 // pass SwaggerUI() or ReDoc() (both fully embedded, no external CDN) or
 // your own DocsUI; nil defaults to SwaggerUI().
-func MountDocs(mux *http.ServeMux, api *openapi.API, path string, ui DocsUI) {
+func MountDocs(mux *http.ServeMux, api SpecSource, path string, ui DocsUI) {
 	if ui == nil {
 		ui = SwaggerUI()
 	}
