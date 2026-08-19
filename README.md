@@ -124,8 +124,9 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-Hooks and per-method overriding (below) are built; auth is still designed
-but not yet built.
+Hooks, per-method overriding, custom path/route config, a global default
+auth policy + middleware, and a per-field choice between nesting a
+relation and exposing just its ID (all below) are built.
 
 ### Generated docs UI
 
@@ -235,8 +236,78 @@ func (r *authorWithAudit) Config() goninja.ResourceConfig {
 `Routes` is opt-in restriction, not a list you must spell out in full —
 leave it unset (or nil) to keep every route. `ResourceConfig` also carries
 an additive-only `Auth` override (`AuthOverride.AlsoProtect`/`Public`) for
-the global default auth landing in a later phase; it's plumbed through
-today but nothing enforces it yet.
+the global default auth below — `create`/`update`/`delete` protected but a
+resource wants `retrieve` protected too, or one route punched public
+against the default.
+
+### Global auth and middleware
+
+`goninja.MountWithConfig` is `Mount` plus a `Config`: a global default auth
+policy and generic middleware (logging, CORS, ...) applied to every
+resource passed to it.
+
+```go
+authMW := func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+        user, ok := authenticate(req) // yours
+        if !ok {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, req.WithContext(goninja.WithUser(req.Context(), user)))
+    })
+}
+
+cfg := goninja.Config{
+    DefaultAuth: goninja.AuthPolicy{
+        Protected:  []string{"create", "update", "delete"},
+        Middleware: []func(http.Handler) http.Handler{authMW},
+    },
+    Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
+}
+
+goninja.MountWithConfig(mux, doc, cfg,
+    api.NewAuthorResource(db),
+    api.NewBookResource(db),
+)
+```
+
+`DefaultAuth.Protected` names routes ("list", "retrieve", "create",
+"update", "delete") that require auth by default; `DefaultAuth.Middleware`
+is what enforces it, wrapping only the routes that end up protected once a
+resource's own `ResourceConfig.Auth` override is folded in. `Middleware`
+wraps every route on every resource unconditionally, public or not. A
+resource that reads the authenticated user — typically inside
+`DefaultAuth.Middleware` itself, or from an overridden method/hook —
+retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
+being just `ID() string`; goninja never constructs one itself.
+
+Plain `Mount` still works exactly as before — a resource it mounts gets a
+zero `Config`, so nothing is protected and no middleware runs, unless you
+switch that resource to `MountWithConfig`.
+
+### Relations: nested or by ID
+
+A relation field is nested as the related model's own `Retrieve` type by
+default — the full object, `Preload`ed automatically:
+
+```go
+type Book struct {
+    ID       string `gorm:"primaryKey;type:uuid" goninja:"list,retrieve"`
+    AuthorID string `goninja:"list,retrieve,create,update,filter"`
+    Author   Author `goninja:"retrieve"` // nested as {"author": {...full Author Retrieve...}}
+}
+```
+
+Add `byid` to skip that — the field exposes only the related ID instead,
+and its `Preload` never runs:
+
+```go
+Author Author `goninja:"retrieve,byid"` // {"author_id": "..."} — no nesting, no preload
+```
+
+Useful when a caller only ever needs the reference, not the full related
+object, and the extra join/preload would be wasted work.
 
 ## Contributing
 

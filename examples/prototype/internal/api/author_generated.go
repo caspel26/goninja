@@ -23,10 +23,12 @@ type AuthorList struct {
 }
 
 // AuthorRetrieve is the shape returned by GET /authors/{id}.
-// A relation field (e.g. Author) is nested as that model's own
-// Retrieve type, never the raw related struct — output types are
-// always separate from the model, so a sensitive field can't leak into a
-// response just because it exists on the related struct either.
+// A relation field (e.g. Author) is nested as that model's own Retrieve
+// type, never the raw related struct — output types are always separate
+// from the model, so a sensitive field can't leak into a response just
+// because it exists on the related struct either. A relation field tagged
+// "byid" (plan section 5.12) instead exposes only the related model's ID,
+// as "<field>_id" — no nesting, no Preload.
 type AuthorRetrieve struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -166,7 +168,9 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 }
 
 // Retrieve preloads every relation field carried on the retrieve type —
-// list never does, by construction (see List above).
+// list never does, by construction (see List above) — except one tagged
+// "byid" (plan section 5.12), which exposes only the related ID and so
+// skips the Preload entirely.
 func (r *AuthorResource) Retrieve(ctx context.Context, id string) (*AuthorRetrieve, error) {
 	q := r.DB(ctx)
 
@@ -551,23 +555,27 @@ func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
 // Register mounts list/retrieve/create/update/delete routes for
 // Author under /authors on mux, or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
-// set.
+// set. Every handler is wrapped through r.Protect, which applies this
+// resource's Config (global default auth + generic middleware, set via
+// MountWithConfig — see config.go) combined with cfg's own AuthOverride; a
+// resource mounted via plain Mount has a zero Config, so Protect is a
+// no-op there.
 func (r *AuthorResource) Register(mux *http.ServeMux) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/authors")
 	if cfg.RouteEnabled("list") {
-		mux.HandleFunc("GET "+path, r.listHandler)
+		mux.HandleFunc("GET "+path, r.Protect("list", cfg, r.listHandler))
 	}
 	if cfg.RouteEnabled("create") {
-		mux.HandleFunc("POST "+path, r.createHandler)
+		mux.HandleFunc("POST "+path, r.Protect("create", cfg, r.createHandler))
 	}
 	if cfg.RouteEnabled("retrieve") {
-		mux.HandleFunc("GET "+path+"/{id}", r.retrieveHandler)
+		mux.HandleFunc("GET "+path+"/{id}", r.Protect("retrieve", cfg, r.retrieveHandler))
 	}
 	if cfg.RouteEnabled("update") {
-		mux.HandleFunc("PUT "+path+"/{id}", r.updateHandler)
+		mux.HandleFunc("PUT "+path+"/{id}", r.Protect("update", cfg, r.updateHandler))
 	}
 	if cfg.RouteEnabled("delete") {
-		mux.HandleFunc("DELETE "+path+"/{id}", r.deleteHandler)
+		mux.HandleFunc("DELETE "+path+"/{id}", r.Protect("delete", cfg, r.deleteHandler))
 	}
 }

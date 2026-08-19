@@ -38,6 +38,13 @@ type Field struct {
 	// (go-playground/validator syntax, e.g. "required,max=120"), empty if
 	// none was present. Only meaningful on Create/Update schema fields.
 	ValidateTag string
+	// RelatedIDGoType is the Go type of the related model's ID field,
+	// resolved by Generate (generate.go) across the full model list — only
+	// meaningful when IsRelation() && IsByID() (plan section 5.12). Left
+	// empty by ParseModels itself; Generate fills it in before rendering,
+	// falling back to "string" if the related model can't be found in the
+	// same generation run.
+	RelatedIDGoType string
 }
 
 // HasTag reports whether the field is annotated with the given goninja tag.
@@ -59,6 +66,37 @@ func (f Field) IsRelation() bool {
 	t = strings.TrimPrefix(t, "[]")
 	t = strings.TrimPrefix(t, "*")
 	return !scalarGoTypes[t]
+}
+
+// IsByID reports whether a relation field carries the "byid" modifier on
+// its goninja tag (e.g. `goninja:"retrieve,byid"`, plan section 5.12): its
+// Retrieve schema exposes only the related model's ID, as "<field>_id",
+// skipping that field's Preload — instead of nesting the related model's
+// full Retrieve type, today's only behavior for a relation field with no
+// modifier. Meaningless on a non-relation field.
+func (f Field) IsByID() bool {
+	return f.HasTag("byid")
+}
+
+// RelatedIDOpenAPIType/RelatedIDOpenAPIFormat mirror OpenAPIType/
+// OpenAPIFormat, but for a byid relation field's synthesized "<field>_id"
+// property — typed after the related model's own ID (RelatedIDGoType,
+// resolved by Generate) rather than the relation field's own unused struct
+// type.
+func (f Field) RelatedIDOpenAPIType() string {
+	if f.RelatedIDGoType == "int64" {
+		return "integer"
+	}
+	return "string"
+}
+
+// RelatedIDOpenAPIFormat is RelatedIDGoType's OpenAPI "format", mirroring
+// OpenAPIFormat.
+func (f Field) RelatedIDOpenAPIFormat() string {
+	if f.RelatedIDGoType == "int64" {
+		return "int64"
+	}
+	return ""
 }
 
 // floatGoTypes are the Go types treated as floating point for filter

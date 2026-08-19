@@ -78,10 +78,37 @@ wrapper overrides a resource's mount path and/or restricts which routes
 `Register`/`OpenAPI()` emit (`Routes` is opt-in restriction: empty means
 every route). `AuthOverride` is additive-only by design (plan section
 5.3) and is plumbed through `ResourceConfig` already, but nothing enforces
-it yet — that's `Config.DefaultAuth`/`Config.Middleware`, still to come.
-Still not built: `WithUser`/`UserFromContext`, global default auth/
-middleware, relations nested-vs-by-id (plan §5.12). Don't over-build
-beyond what the current phase calls for without checking the plan.
+it enforces (plan §5.3) via `config.go`'s `Config`/`AuthPolicy`/
+`MountWithConfig` — a sibling to `Mount` (`openapi.go`) since goninja's
+actual per-resource `Register`/`Mount` shape diverged from the plan's
+original central `goninja.New(Config)`/`api.Register(mux, resource)`
+sketch: `MountWithConfig(mux, doc, cfg, resources...)` calls
+`BaseResource.SetConfig(cfg)` on every resource before `Register(mux)`, and
+each generated `Register` wraps every handler through the new
+`BaseResource.Protect(route, cfg, handler)` — combines the global
+`Config.DefaultAuth.Protected` with the resource's own
+`ResourceConfig.Auth` (`AlsoProtect`/`Public`, additive-only, finally
+enforced) to decide whether that route is protected, wraps it with
+`Config.DefaultAuth.Middleware` only if so, and with `Config.Middleware`
+(logging/CORS-style, always applied) regardless. Plain `Mount` still works
+unchanged — a resource it mounts has a zero `Config`, so `Protect` is a
+no-op. `auth.go`'s `User`/`WithUser`/`UserFromContext` (plan section 5.8)
+are the minimal contract between an auth middleware and a resource:
+middleware stores an authenticated `User` (a one-method interface, `ID()
+string`) on the context via `WithUser`, a resource reads it back via
+`UserFromContext` — typically inside the `Config.DefaultAuth.Middleware`
+chain itself. Phase 6's last item, relations nested-vs-by-id (plan §5.12),
+is also done: a relation field's `goninja` tag takes an additional `byid`
+modifier (e.g. `goninja:"retrieve,byid"`) — `Field.IsByID` in `ir.go` —
+that makes its `Retrieve` schema expose only `<field>_id` (typed after the
+related model's own `IDGoType`, resolved across the full model list by
+`Generate`'s `resolveByIDFields` in `generate.go` since a single model's
+codegen has no other visibility into its related model) instead of nesting
+the related model's full `Retrieve`, and skips that field's `Preload`
+entirely — no modifier keeps today's only prior behavior, unchanged. This
+closes out Phase 6; the plan has no Phase 7 work started yet (testing —
+see plan section 6). Don't over-build beyond what the current phase calls
+for without checking the plan.
 
 ## Commands
 
@@ -137,9 +164,10 @@ Three pieces:
      directly, so there's nothing to deduplicate across models.
 
 2. **root package `goninja`** (`resource.go`, `hooks.go`,
-   `resource_config.go`, `errors.go`, `validate.go`, `mapper.go`,
-   `pagination.go`, `id.go`, `openapi.go`, `docs.go`, `docs_swaggerui.go`,
-   `docs_redoc.go`) — the runtime support generated code depends on:
+   `resource_config.go`, `auth.go`, `config.go`, `errors.go`, `validate.go`,
+   `mapper.go`, `pagination.go`, `id.go`, `openapi.go`, `docs.go`,
+   `docs_swaggerui.go`, `docs_redoc.go`) — the runtime support generated
+   code depends on:
    `BaseResource` (embedded by every generated `<Model>Resource`), its
    transaction-aware `DB(ctx)`, `InTransaction`/`WithTx`/`TxFromContext`,
    and `SetSelf`/`Self()` (the dispatch point hooks, method overrides, and
@@ -151,7 +179,11 @@ Three pieces:
    `hooks.go`'s `BeforeCreateHook`/`AfterCreateHook`/`BeforeUpdateHook`/
    `BeforeDeleteHook` optional interfaces (Phase 6); `resource_config.go`'s
    `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section 5.3);
-   and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+   `auth.go`'s `User`/`WithUser`/`UserFromContext` (Phase 6, plan section
+   5.8); `config.go`'s `Config`/`AuthPolicy`/`MountWithConfig` plus
+   `BaseResource.SetConfig`/`Config`/`Protect` (Phase 6, plan section 6 item
+   5 — the global auth/middleware enforcement); and
+   `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
    section 5.11) — a resource's `SetErrorMapper` overrides how its
    generated handlers turn an error into an HTTP response; unset falls
    back to `DefaultErrorMapper`. `openapi.go`'s `API`/`OpenAPIProvider`
@@ -191,8 +223,9 @@ hand-editing anything under `examples/prototype/internal/api`.
 ### Key generator conventions
 
 - Tag vocabulary is the field-level `goninja:"..."` struct tag (comma-
-  separated verbs: `list`, `retrieve`, `create`, `update`, `filter`);
-  `Field.HasTag` in `ir.go` is the single place that interprets it.
+  separated verbs: `list`, `retrieve`, `create`, `update`, `filter`, plus
+  the relation-only modifier `byid`); `Field.HasTag` in `ir.go` is the
+  single place that interprets it.
 - `list` and `retrieve` are separate output types by design (plan section
   5.1/5.5) — list stays lean and never preloads relations; retrieve is the
   full detail view and preloads every relation field it carries. This is
@@ -207,6 +240,18 @@ hand-editing anything under `examples/prototype/internal/api`.
 - `Field.IsRelation` (in `ir.go`) currently assumes single-value (not
   slice/has-many) relations for schema nesting — a slice relation field
   would generate but its schema conversion wouldn't be correct yet.
+- A relation field's `goninja` tag can carry a `byid` modifier (e.g.
+  `goninja:"retrieve,byid"`, `Field.IsByID` in `ir.go`, plan section 5.12)
+  to expose only the related model's ID instead of nesting its full
+  `Retrieve` — the generated field becomes `<Field>ID` on
+  `<Model>Retrieve`, JSON `<field>_id`, typed after the related model's own
+  `IDGoType`, and `Retrieve`'s query skips that field's `Preload` entirely.
+  Since a single model's codegen has no visibility into another model's IR
+  on its own, `Generate`'s `resolveByIDFields` (`generate.go`) resolves
+  every byid field's related ID type across the full model list *before*
+  rendering, filling in `Field.RelatedIDGoType` (falling back to `"string"`
+  if the related model isn't in the same generation run). No modifier
+  keeps the only prior behavior — full nesting, full `Preload` — unchanged.
 - The generated package imports the models package by import path
   (`-models-import`), so generated code and model structs stay in
   separate packages (`ModelsImport`/`ModelsPkg` in `generate.go`).
@@ -283,6 +328,13 @@ hand-editing anything under `examples/prototype/internal/api`.
   documents a route `Register` didn't actually mount. `ResourceConfig.Auth`
   (`AuthOverride.AlsoProtect`/`Public`) is additive-only by design (a
   per-resource override can only ever add protection relative to the
-  future global default, never silently remove it) and is threaded through
-  already, but nothing enforces it yet — that's `Config.DefaultAuth`/
-  `Config.Middleware`, still to come (plan §6 item 5).
+  global default, never silently remove it) and is now enforced: `Register`
+  wraps every handler through `r.Protect(route, cfg, handler)`
+  (`BaseResource`, `resource.go`), which combines `cfg.Auth` with the
+  resource's `Config` (global `DefaultAuth`/`Middleware`, `config.go`, set
+  via `MountWithConfig` — a sibling to `Mount` a caller uses instead of it
+  once there's a global policy to enforce) to decide whether that route is
+  protected, then applies `DefaultAuth.Middleware` only if so and
+  `Config.Middleware` (logging/CORS-style) unconditionally. A resource
+  mounted via plain `Mount` has a zero `Config`, so `Protect` is a no-op —
+  no behavior change for callers that don't opt in.

@@ -52,6 +52,64 @@ func TestGenerate_TwoModels(t *testing.T) {
 	}
 }
 
+// TestGenerate_RelationByID is the plan section 5.12 exit criterion: a
+// relation field tagged "byid" produces a Retrieve exposing only the
+// related model's ID (no Preload, no nested Retrieve), typed after the
+// related model's own IDGoType — and a relation field with no modifier
+// (Book.Reviews, standing in for the untouched default) keeps nesting the
+// full Retrieve exactly as before, no regression.
+func TestGenerate_RelationByID(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Author",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Name", GoType: "string", JSONName: "name", Tags: []string{"list", "retrieve", "create"}},
+			},
+		},
+		{
+			Name: "Book",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "create"}},
+				{Name: "AuthorID", GoType: "string", JSONName: "author_id", Tags: []string{"list", "create"}},
+				{Name: "Author", GoType: "Author", JSONName: "author", Tags: []string{"retrieve", "byid"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(outDir, "book_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	for _, want := range []string{
+		// Retrieve exposes AuthorID (the related model's ID type), not a
+		// nested Author.
+		`AuthorID string ` + "`json:\"author_id\"`",
+		"AuthorID: m.AuthorID,",
+		`"author_id": {Type: "string"}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+	for _, notWant := range []string{
+		`q.Preload("Author")`,
+		"AuthorRetrieve",
+	} {
+		if strings.Contains(got, notWant) {
+			t.Errorf("expected generated file NOT to contain %q (byid should skip nesting/preload), got:\n%s", notWant, got)
+		}
+	}
+}
+
 func TestGenerate_NoModels(t *testing.T) {
 	if err := Generate(nil, t.TempDir(), "api", "example.com/app/models", "models"); err == nil {
 		t.Fatal("expected error for empty model list, got nil")
