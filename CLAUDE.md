@@ -78,14 +78,27 @@ wrapper overrides a resource's mount path and/or restricts which routes
 `Register`/`OpenAPI()` emit (`Routes` is opt-in restriction: empty means
 every route). `AuthOverride` is additive-only by design (plan section
 5.3) and is plumbed through `ResourceConfig` already, but nothing enforces
-it yet — that's `Config.DefaultAuth`/`Config.Middleware`, still to come.
-`auth.go`'s `User`/`WithUser`/`UserFromContext` (plan section 5.8) are the
-minimal contract between an auth middleware and a resource: middleware
-stores an authenticated `User` (a one-method interface, `ID() string`) on
-the context via `WithUser`, a resource reads it back via
-`UserFromContext`. Nothing enforces auth yet — still not built:
-`Config.DefaultAuth`/`Config.Middleware` globals, relations
-nested-vs-by-id (plan §5.12). Don't over-build beyond what the current
+it enforces (plan §5.3) via `config.go`'s `Config`/`AuthPolicy`/
+`MountWithConfig` — a sibling to `Mount` (`openapi.go`) since goninja's
+actual per-resource `Register`/`Mount` shape diverged from the plan's
+original central `goninja.New(Config)`/`api.Register(mux, resource)`
+sketch: `MountWithConfig(mux, doc, cfg, resources...)` calls
+`BaseResource.SetConfig(cfg)` on every resource before `Register(mux)`, and
+each generated `Register` wraps every handler through the new
+`BaseResource.Protect(route, cfg, handler)` — combines the global
+`Config.DefaultAuth.Protected` with the resource's own
+`ResourceConfig.Auth` (`AlsoProtect`/`Public`, additive-only, finally
+enforced) to decide whether that route is protected, wraps it with
+`Config.DefaultAuth.Middleware` only if so, and with `Config.Middleware`
+(logging/CORS-style, always applied) regardless. Plain `Mount` still works
+unchanged — a resource it mounts has a zero `Config`, so `Protect` is a
+no-op. `auth.go`'s `User`/`WithUser`/`UserFromContext` (plan section 5.8)
+are the minimal contract between an auth middleware and a resource:
+middleware stores an authenticated `User` (a one-method interface, `ID()
+string`) on the context via `WithUser`, a resource reads it back via
+`UserFromContext` — typically inside the `Config.DefaultAuth.Middleware`
+chain itself. Still not built: relations nested-vs-by-id (plan §5.12), the
+last remaining Phase 6 item. Don't over-build beyond what the current
 phase calls for without checking the plan.
 
 ## Commands
@@ -142,9 +155,10 @@ Three pieces:
      directly, so there's nothing to deduplicate across models.
 
 2. **root package `goninja`** (`resource.go`, `hooks.go`,
-   `resource_config.go`, `auth.go`, `errors.go`, `validate.go`, `mapper.go`,
-   `pagination.go`, `id.go`, `openapi.go`, `docs.go`, `docs_swaggerui.go`,
-   `docs_redoc.go`) — the runtime support generated code depends on:
+   `resource_config.go`, `auth.go`, `config.go`, `errors.go`, `validate.go`,
+   `mapper.go`, `pagination.go`, `id.go`, `openapi.go`, `docs.go`,
+   `docs_swaggerui.go`, `docs_redoc.go`) — the runtime support generated
+   code depends on:
    `BaseResource` (embedded by every generated `<Model>Resource`), its
    transaction-aware `DB(ctx)`, `InTransaction`/`WithTx`/`TxFromContext`,
    and `SetSelf`/`Self()` (the dispatch point hooks, method overrides, and
@@ -157,7 +171,10 @@ Three pieces:
    `BeforeDeleteHook` optional interfaces (Phase 6); `resource_config.go`'s
    `ResourceConfig`/`AuthOverride`/`Configurer` (Phase 6, plan section 5.3);
    `auth.go`'s `User`/`WithUser`/`UserFromContext` (Phase 6, plan section
-   5.8); and `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
+   5.8); `config.go`'s `Config`/`AuthPolicy`/`MountWithConfig` plus
+   `BaseResource.SetConfig`/`Config`/`Protect` (Phase 6, plan section 6 item
+   5 — the global auth/middleware enforcement); and
+   `ErrorMapper`/`DefaultErrorMapper`/`Respond`/`RespondJSON` (plan
    section 5.11) — a resource's `SetErrorMapper` overrides how its
    generated handlers turn an error into an HTTP response; unset falls
    back to `DefaultErrorMapper`. `openapi.go`'s `API`/`OpenAPIProvider`
@@ -289,6 +306,13 @@ hand-editing anything under `examples/prototype/internal/api`.
   documents a route `Register` didn't actually mount. `ResourceConfig.Auth`
   (`AuthOverride.AlsoProtect`/`Public`) is additive-only by design (a
   per-resource override can only ever add protection relative to the
-  future global default, never silently remove it) and is threaded through
-  already, but nothing enforces it yet — that's `Config.DefaultAuth`/
-  `Config.Middleware`, still to come (plan §6 item 5).
+  global default, never silently remove it) and is now enforced: `Register`
+  wraps every handler through `r.Protect(route, cfg, handler)`
+  (`BaseResource`, `resource.go`), which combines `cfg.Auth` with the
+  resource's `Config` (global `DefaultAuth`/`Middleware`, `config.go`, set
+  via `MountWithConfig` — a sibling to `Mount` a caller uses instead of it
+  once there's a global policy to enforce) to decide whether that route is
+  protected, then applies `DefaultAuth.Middleware` only if so and
+  `Config.Middleware` (logging/CORS-style) unconditionally. A resource
+  mounted via plain `Mount` has a zero `Config`, so `Protect` is a no-op —
+  no behavior change for callers that don't opt in.

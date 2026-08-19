@@ -124,9 +124,10 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 $ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
 ```
 
-Hooks, per-method overriding, and custom path/route config (below) are
-built; the `WithUser`/`UserFromContext` context contract exists too, but
-nothing enforces auth yet — a global default/middleware is still to come.
+Hooks, per-method overriding, custom path/route config, and a global
+default auth policy + middleware (below) are built — the last remaining
+piece is a per-field choice between nesting a relation and exposing just
+its ID.
 
 ### Generated docs UI
 
@@ -236,49 +237,55 @@ func (r *authorWithAudit) Config() goninja.ResourceConfig {
 `Routes` is opt-in restriction, not a list you must spell out in full —
 leave it unset (or nil) to keep every route. `ResourceConfig` also carries
 an additive-only `Auth` override (`AuthOverride.AlsoProtect`/`Public`) for
-the global default auth landing in a later phase; it's plumbed through
-today but nothing enforces it yet.
+the global default auth below — `create`/`update`/`delete` protected but a
+resource wants `retrieve` protected too, or one route punched public
+against the default.
 
-### The authenticated user
+### Global auth and middleware
 
-`goninja.WithUser`/`goninja.UserFromContext` are the contract between your
-auth middleware and a resource — goninja doesn't impose a user struct
-beyond a one-method interface:
-
-```go
-type User interface {
-    ID() string
-}
-```
-
-Your middleware authenticates the request and stores the result:
+`goninja.MountWithConfig` is `Mount` plus a `Config`: a global default auth
+policy and generic middleware (logging, CORS, ...) applied to every
+resource passed to it.
 
 ```go
-func authMiddleware(next http.Handler) http.Handler {
+authMW := func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
         user, ok := authenticate(req) // yours
-        if ok {
-            req = req.WithContext(goninja.WithUser(req.Context(), user))
+        if !ok {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
         }
-        next.ServeHTTP(w, req)
+        next.ServeHTTP(w, req.WithContext(goninja.WithUser(req.Context(), user)))
     })
 }
-```
 
-A resource reads it back, typically from an overridden method or a hook:
-
-```go
-func (r *authorWithAudit) BeforeCreate(ctx context.Context, in *api.AuthorCreate) error {
-    if user, ok := goninja.UserFromContext(ctx); ok {
-        log.Printf("author created by %s", user.ID())
-    }
-    return nil
+cfg := goninja.Config{
+    DefaultAuth: goninja.AuthPolicy{
+        Protected:  []string{"create", "update", "delete"},
+        Middleware: []func(http.Handler) http.Handler{authMW},
+    },
+    Middleware: []func(http.Handler) http.Handler{LoggingMiddleware()},
 }
+
+goninja.MountWithConfig(mux, doc, cfg,
+    api.NewAuthorResource(db),
+    api.NewBookResource(db),
+)
 ```
 
-Nothing enforces authentication yet — that's `Config.DefaultAuth`/
-`Config.Middleware`, a later phase; until then, a resource that wants to
-require a user checks `UserFromContext` itself.
+`DefaultAuth.Protected` names routes ("list", "retrieve", "create",
+"update", "delete") that require auth by default; `DefaultAuth.Middleware`
+is what enforces it, wrapping only the routes that end up protected once a
+resource's own `ResourceConfig.Auth` override is folded in. `Middleware`
+wraps every route on every resource unconditionally, public or not. A
+resource that reads the authenticated user — typically inside
+`DefaultAuth.Middleware` itself, or from an overridden method/hook —
+retrieves it with `goninja.UserFromContext(ctx)`, the `User` interface
+being just `ID() string`; goninja never constructs one itself.
+
+Plain `Mount` still works exactly as before — a resource it mounts gets a
+zero `Config`, so nothing is protected and no middleware runs, unless you
+switch that resource to `MountWithConfig`.
 
 ## Contributing
 
