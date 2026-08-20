@@ -34,6 +34,25 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
   cost `Retrieve` pays on a relation field — the baseline for future
   optimization work.
 
+- **Benchmark regression check in CI** — `scripts/bench-regression.sh`, `scripts/testdata/bench-baseline.txt`, `.github/workflows/bench.yml`
+
+  `make bench-check` runs the benchmark suite (`-count=10`) and compares
+  it against the committed baseline with `benchstat`, failing a PR if any
+  benchmark's `sec/op`/`B/op`/`allocs/op` regresses by more than 25% and
+  the difference is statistically significant (`benchstat`'s own `~`
+  already filters out noise below that). The comparison table is also
+  written to the GitHub Actions job summary, so a reviewer sees the actual
+  numbers, not just pass/fail, and a self-contained HTML report
+  (`reports/bench-report.html`, gitignored) is uploaded as a CI artifact
+  for a more readable view than raw logs. `make bench-baseline` moves the
+  baseline deliberately, after confirming a numbers change is expected.
+
+- **`make bench-profile`** — `Makefile`
+
+  Runs the benchmark suite with `-cpuprofile`/`-memprofile` and prints a
+  top-10 `go tool pprof` summary for each, for finding what's actually
+  worth optimizing rather than just whether something regressed.
+
 ### Changed
 
 - **`Resource.Register` takes `goninja.Router` instead of `*http.ServeMux`** — `api.go`, `docsui/docs.go`, `internal/codegen/templates/model.go.tmpl`

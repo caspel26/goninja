@@ -205,7 +205,10 @@ make vet                 # go vet ./...
 make fmt                 # gofmt -l . (lists unformatted files)
 make cover               # coverage for . + internal/codegen + docsui/id/openapi/router/goninjatest; make cover THRESHOLD=70 to fail below it (CI does this)
 make cover-badge         # regenerate coverage-badge.json (README badge) from the last `make cover` run
-make bench               # go test ./examples/prototype/... -bench=. -benchmem -run=^$
+make bench               # go test ./examples/prototype/... -bench=. -benchmem -run='^$'
+make bench-baseline      # overwrite scripts/testdata/bench-baseline.txt with a fresh -count=10 run; commit deliberately
+make bench-check         # regression gate: compares a fresh run against the baseline via benchstat, fails beyond 25% (CI does this on PRs)
+make bench-profile       # CPU + memory pprof of the benchmark suite, top-10 printed; go tool pprof -http=:8080 for the interactive view
 make generate-prototype  # regenerate examples/prototype/internal/api from examples/prototype/models
 make run-prototype       # generate-prototype, then run the example server on :8080 (needs PROTOTYPE_DSN, see below)
 ```
@@ -866,4 +869,66 @@ thousand iterations. Fixed with a `drainAndClose` helper
 excludes that directory from the coverage gate ("exercised manually, not
 part of the coverage gate") and plain `go test` (no `-bench`) never
 executes a benchmark's body — so this needed no changes to the coverage
-script or its threshold.
+script or its threshold. Also fixed here: both `bench` Makefile targets'
+`-run=^$` had been silently broken since introduction — GNU Make swallows
+a bare trailing `$` (interpreting it as a reference to the empty-named
+variable), so the recipe actually ran `-run=^`, an anchor with nothing
+after it that matches every test name, not just the empty one — meaning
+`make bench` also ran every regular test in the package alongside the
+benchmarks instead of skipping them (harmlessly, since they passed, but
+not what `-run=^$` was written to do). Fixed by quoting it as `-run='^$'`.
+
+**Same-day follow-up: benchmark regression check in CI.** The user asked
+for a way to catch a real performance regression automatically, not just
+run the benchmarks. `scripts/bench-regression.sh` runs the suite at
+`-count=10` and compares it against a committed baseline
+(`scripts/testdata/bench-baseline.txt`) using `golang.org/x/perf/cmd/
+benchstat` (pinned pseudo-version via `go run`, since x/perf ships no
+tagged releases — invoked, not added to `go.mod`, so it costs nothing for
+a consumer). `benchstat` already collapses an insignificant difference to
+`~` at its own default alpha (0.05); the script adds one more gate on top
+of that — only a statistically-significant delta whose magnitude exceeds
+`THRESHOLD_PCT` (default 25, deliberately wide since GitHub-hosted
+runners are noisy shared neighbors — a benchmark suite is inherently
+less reproducible in CI than a correctness test) fails the build. `make
+bench-baseline` overwrites the committed baseline deliberately (after
+confirming a numbers change is expected, e.g. after an intentional
+optimization); `make bench-check` is the gate `.github/workflows/bench.yml`
+runs on every PR touching Go source. Per the user's explicit ask to also
+*see* the numbers, not just pass/fail: the script also writes benchstat's
+human-readable comparison table into `$GITHUB_STEP_SUMMARY` when running
+in CI, so a reviewer sees the actual before/after numbers in the Actions
+run UI without opening raw logs — a lighter-weight answer than a
+persistent trend dashboard (e.g. `github-action-benchmark` + gh-pages),
+which the user was offered and didn't choose.
+
+**Same-day follow-up: HTML benchmark report as a CI artifact.** The user
+asked for something more readable than the plain-text job summary — "cant
+it be a json? i wanted smth like an hmtl idk". Offered a choice between a
+CI-downloadable artifact, a nicer Markdown summary, or a published page;
+the user picked the CI artifact. `bench-regression.sh` now also writes a
+self-contained HTML file (`reports/bench-report.html`, gitignored — a
+generated-per-run artifact, not tracked) built from the same `benchstat`
+text output already computed for the job summary: a pass/fail badge, a
+list of exactly which benchmarks regressed (if any), and the full
+comparison table in a `<pre>` block, no external CSS/JS. `.github/
+workflows/bench.yml` uploads it via `actions/upload-artifact@v4` with
+`if: always()` so it's downloadable whether the check passed or failed.
+
+Regression gating alone didn't answer what the user actually asked next —
+which allocations/functions are worth optimizing, not just whether a
+change made things worse. `make bench-profile` (Makefile) runs the same
+suite with `-cpuprofile`/`-memprofile` against a single explicit package
+(`go test ./examples/prototype`, not the `...` wildcard — `-cpuprofile`
+rejects multiple packages) and prints a `go tool pprof -top` summary for
+each. Verified against the real suite: the CPU profile is dominated by
+`syscall`/scheduler frames (expected — the benchmarks drive real HTTP
+round trips over a loopback listener, not pure CPU-bound work), while the
+memory profile surfaces genuinely actionable hotspots —
+`gorm.Statement.clone`/`AddClause` and `reflect.New` are the largest
+allocators, consistent with GORM's per-query statement-building overhead —
+confirming `-alloc_space` is the more useful of the two profiles for this
+suite. Output goes to `profiles/` (`*.out`/`*.test`, already covered by
+existing `.gitignore` patterns, so no new ignore rule was needed); the
+target also prints the `go tool pprof -http=:8080 ...` command for the
+interactive flamegraph/callgraph view.

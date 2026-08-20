@@ -40,3 +40,7 @@ docs-site/public/
 docs-site/resources/
 docs-site/.hugo_build.lock
 public/
+
+# CI-generated benchmark HTML report (scripts/bench-regression.sh) - an
+# artifact uploaded per run, not something to keep in the tree
+/reports/
