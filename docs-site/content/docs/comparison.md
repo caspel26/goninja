@@ -15,7 +15,7 @@ rather than a scoreboard.
 | **Model resolved** | Compile time | Startup, by reflection | Request time | Before `go build` |
 | **Source on disk** | Yours only | Yours only | Yours only | Yours **+ one file per model** |
 | **A bad field shows up** | Compile time | Runtime | Runtime | Compile time |
-| **Router** | Any (`net/http`, gin, chi, fiber) | Huma's | Fiber only | `net/http` only |
+| **Router** | Any (`net/http`, gin, chi, fiber) | Huma's | Fiber only | `net/http`, gin, echo, chi |
 | **OpenAPI** | Built in, excellent | From Huma | Partial | Built in, from the same IR |
 | **Debuggable handlers** | Yes — you wrote them | No source to step into | No source to step into | Yes — plain generated Go |
 | **Maturity** | Stable, widely used | Early | Pre-1.0, breaking changes | **Pre-alpha** |
@@ -55,8 +55,10 @@ Stated plainly, because the table above rounds in its favour:
   step — it just stops you having to remember it.
 - **Generated files are in your repo.** Some teams consider that noise; goninja
   considers it the point.
-- **GORM and `net/http` are assumed.** There's no adapter layer for other ORMs
-  or routers.
+- **GORM is assumed.** There's no adapter layer for other ORMs. Routing has
+  one — gin, echo, and chi all mount the same generated code unchanged via
+  [Router Adapters](../guides/router-adapters/) — but anything outside those
+  four (fiber, gorilla, ...) still needs one written.
 
 If reflection-driven CRUD already works for you, none of the above is worth
 switching for. goninja is for the case where you'd rather read the code that

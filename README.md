@@ -101,7 +101,7 @@ $ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit
 |---|---|
 | **Code-first** | The struct is the single source of truth. No schema files, no YAML, no DSL. |
 | **Generated, not reflected** | Real `.go` files you commit. A bad tag fails the build, not production. |
-| **Plain `net/http`** | Routes mount on an `*http.ServeMux`. No custom router, no framework lock-in. |
+| **`net/http`, gin, echo, or chi** | Routes mount on any of the four unchanged — plain `*http.ServeMux` needs nothing extra; gin/echo/chi each get a thin, separate adapter module. |
 | **Safe by default** | Output types are separate structs from your model, so a field can't leak into a response just because it exists. |
 | **No N+1 by construction** | `list` never preloads; `retrieve` preloads what it carries. The code that would N+1 is never generated. |
 | **Built to be extended** | Hooks, per-method overrides, custom actions and auth — all without touching generated files. |
@@ -131,6 +131,7 @@ Everything lives at **[goninja.dev](https://goninja.dev)**.
 | [Hooks & Overrides](https://goninja.dev/docs/guides/hooks-and-overrides/) · [Actions](https://goninja.dev/docs/guides/actions/) | Extending a resource |
 | [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
 | [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
+| [Router Adapters](https://goninja.dev/docs/guides/router-adapters/) | Mount on gin, echo, or chi instead of `net/http` |
 | [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
 | [pkg.go.dev](https://pkg.go.dev/github.com/caspel26/goninja) | Generated API reference for every package and symbol |
 | [Changelog](https://goninja.dev/docs/changelog/) | What each release added, and what it broke |
