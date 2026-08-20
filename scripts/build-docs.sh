@@ -3,9 +3,15 @@
 # Build the documentation site once per documented version into a single output
 # tree, ready to publish as one artifact:
 #
-#   <out>/         the newest released version (what visitors land on)
-#   <out>/vX.Y/    one directory per released minor series, newest patch wins
-#   <out>/dev/     the current working tree, i.e. unreleased documentation
+#   <out>/         the current documentation, from the working tree
+#   <out>/vX.Y/    a frozen snapshot per released minor series, newest patch wins
+#
+# The root deliberately serves the living documentation rather than the newest
+# tag. goninja is pre-1.0 and its docs are still being written: serving the tag
+# at the root meant every correction stayed invisible to the default visitor
+# until the next release, which bit twice in the first hour — a changelog that
+# 404'd and a reference section that silently did not appear. Readers pinned to
+# a release can still get its snapshot from the version selector.
 #
 # Every version is built with the layouts, assets and configuration of the
 # *current* tree — only `content/` comes from the tag. That keeps the version
@@ -82,17 +88,15 @@ fi
   printf '{\n'
   printf '  "latest": "%s",\n' "$latest_minor"
   printf '  "versions": [\n'
-  printf '    { "label": "dev", "path": "/dev/", "state": "dev" }'
+  printf '    { "label": "latest", "path": "/", "state": "latest" }'
   for minor in ${minors[@]+"${minors[@]}"}; do
-    state="old"
-    [[ "$minor" == "$latest_minor" ]] && state="latest"
-    printf ',\n    { "label": "%s", "path": "/%s/", "state": "%s" }' \
-      "$minor" "$minor" "$state"
+    printf ',\n    { "label": "%s", "path": "/%s/", "state": "release" }' \
+      "$minor" "$minor"
   done
   printf '\n  ]\n}\n'
 } > "$SITE_DIR/data/versions.json"
 
-echo "build-docs: versions -> dev ${minors[*]:-(none)}"
+echo "build-docs: versions -> latest ${minors[*]:-(none)}"
 
 # build_site <source-dir> <destination> <url-path> <label> <state>
 #
@@ -121,21 +125,18 @@ build_site() {
 }
 
 # ---------------------------------------------------------------------------
-# The working tree, published as the development version.
+# The working tree, at the root: the documentation as it currently stands.
 # ---------------------------------------------------------------------------
 
-build_site "$SITE_DIR" "$OUT/dev" "dev/" "dev" "dev"
+build_site "$SITE_DIR" "$OUT" "" "latest" "latest"
 
-# With no releases to serve there would be nothing at the site root at all, so
-# the working tree stands in for it — a fresh clone still builds a usable site.
 if [[ -z "$latest_minor" ]]; then
-  build_site "$SITE_DIR" "$OUT" "" "dev" "dev"
   echo "build-docs: done -> $OUT"
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# Each released minor series, content taken from its tag.
+# A frozen snapshot per released minor series, content taken from its tag.
 # ---------------------------------------------------------------------------
 
 for i in "${!minors[@]}"; do  # non-empty: the no-release case returned above
@@ -165,18 +166,9 @@ for i in "${!minors[@]}"; do  # non-empty: the no-release case returned above
     cp -R "$SITE_DIR/content/$unversioned" "$stage/content/$unversioned"
   done
 
-  state="old"
-  [[ "$minor" == "$latest_minor" ]] && state="latest"
-
-  build_site "$stage" "$OUT/$minor" "$minor/" "$minor" "$state"
-
-  # The newest release is also what the site root serves.
-  if [[ "$minor" == "$latest_minor" ]]; then
-    build_site "$stage" "$WORK/root" "" "$minor" "latest"
-    # Copy into place rather than building straight into $OUT, which already
-    # holds the per-version directories Hugo would clean out.
-    (cd "$WORK/root" && tar -cf - .) | (cd "$OUT" && tar -xf -)
-  fi
+  # Built after the root, since Hugo clears its destination and these live
+  # inside it.
+  build_site "$stage" "$OUT/$minor" "$minor/" "$minor" "release"
 done
 
 echo "build-docs: done -> $OUT"

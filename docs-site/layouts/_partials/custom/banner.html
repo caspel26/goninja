@@ -19,11 +19,12 @@
   {{- $latest = .latest -}}
 {{- end -}}
 
-{{- if eq $state "dev" -}}
+{{- if eq $state "release" -}}
+  <span>Snapshot of the <strong>{{ $label }}</strong> release. Fixes and
+  additions since then are not in it.</span>
+  <a href="/">Current documentation &rarr;</a>
+{{- else if eq $state "dev" -}}
   <span><strong>Development documentation</strong> — this describes the
   <code>main</code> branch and may cover unreleased features.</span>
   {{- with $latest }}<a href="/">Read the {{ . }} docs &rarr;</a>{{ end -}}
-{{- else if eq $state "old" -}}
-  <span>You are reading the <strong>{{ $label }}</strong> documentation.</span>
-  {{- with $latest }}<a href="/">{{ . }} is current &rarr;</a>{{ end -}}
 {{- end -}}

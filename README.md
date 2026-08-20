@@ -12,6 +12,7 @@
   <a href="https://sonarcloud.io/summary/new_code?id=caspel26_goninja"><img src="https://sonarcloud.io/api/project_badges/measure?project=caspel26_goninja&metric=alert_status" alt="SonarQube Quality Gate"></a>
   <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/caspel26/goninja/main/coverage-badge.json" alt="Coverage">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/caspel26/goninja" alt="License"></a>
+  <a href="https://pkg.go.dev/github.com/caspel26/goninja"><img src="https://pkg.go.dev/badge/github.com/caspel26/goninja.svg" alt="Go Reference"></a>
   <img src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white" alt="Go version">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -131,6 +132,7 @@ Everything lives at **[goninja.dev](https://goninja.dev)**.
 | [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
 | [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
 | [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
+| [pkg.go.dev](https://pkg.go.dev/github.com/caspel26/goninja) | Generated API reference for every package and symbol |
 | [Changelog](https://goninja.dev/docs/changelog/) | What each release added, and what it broke |
 
 ---

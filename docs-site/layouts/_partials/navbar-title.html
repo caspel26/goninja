@@ -42,8 +42,8 @@
           <a href="{{ .path }}" role="menuitem"
              class="{{ if eq .label $current }}gn-version-active{{ end }}">
             <span>{{ .label }}</span>
-            {{- if eq .state "latest" }}<em>latest</em>{{ end -}}
-            {{- if eq .state "dev" }}<em>unreleased</em>{{ end -}}
+            {{- if eq .state "latest" }}<em>current</em>{{ end -}}
+            {{- if eq .state "release" }}<em>snapshot</em>{{ end -}}
           </a>
         {{- end }}
       </div>

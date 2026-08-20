@@ -27,9 +27,10 @@ may contain breaking changes.** Pin an exact version if that matters to you.
 go get github.com/caspel26/goninja@v0.1.0
 ```
 
-Documentation is published per minor series. The version selector in the
-navbar switches between them, and `/dev/` tracks the `main` branch — which may
-document features that are not in any release yet.
+These pages document goninja as it currently stands, which may include changes
+that are not in any release yet. Every released minor series also keeps a
+frozen snapshot of its own documentation — use the version selector in the
+navbar to reach it.
 
 {{< cards >}}
   {{< card link="v0.1.0" title="v0.1.0" icon="tag" subtitle="First pre-alpha release — CRUD generation, filters, auth, OpenAPI." >}}

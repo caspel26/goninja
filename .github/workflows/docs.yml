@@ -41,9 +41,9 @@ jobs:
           extended: true
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Build all documented versions
-        # Builds the working tree as /dev/, each release tag as /vX.Y/, and the
-        # newest release at the root — one tree, one artifact. baseURL comes
-        # from the custom domain, not from the Pages-provided URL.
+        # Builds the working tree at the root and a frozen snapshot per release
+        # tag at /vX.Y/ — one tree, one artifact. baseURL comes from the custom
+        # domain, not from the Pages-provided URL.
         env:
           BASE_URL: https://goninja.dev
           # Authenticates the navbar star-count request; unauthenticated GitHub
