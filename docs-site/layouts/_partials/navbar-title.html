@@ -1,0 +1,52 @@
+{{- /*
+  Overrides the theme partial of the same name to sit a version selector next
+  to the site title. The theme's own `custom/navbar-title.html` hook is not
+  wired up in Hextra v0.12.3, so this is a full override of a small partial.
+
+  The selector is rendered from `data/versions.json`, which scripts/build-docs.sh
+  regenerates before building any version — so every published version lists
+  the full set without fetching anything at runtime.
+*/ -}}
+
+{{- $logoPath := .Site.Params.navbar.logo.path | default "images/logo.svg" -}}
+{{- $logoLink := .Site.Params.navbar.logo.link | default .Site.Home.RelPermalink -}}
+{{- $logoWidth := .Site.Params.navbar.logo.width | default "20" -}}
+{{- $logoHeight := .Site.Params.navbar.logo.height | default "20" -}}
+{{- $logoDarkPath := .Site.Params.navbar.logo.dark | default $logoPath -}}
+{{- $displayTitle := .Site.Params.navbar.displayTitle | default true -}}
+
+{{- $current := .Site.Params.versionLabel | default "dev" -}}
+{{- $versions := (index hugo.Data "versions") -}}
+
+<div class="hx:flex hx:items-center hx:gap-2 hx:ltr:mr-auto hx:rtl:ml-auto">
+  <a class="hx:flex hx:items-center hx:hover:opacity-75" href="{{ $logoLink }}">
+    {{- if (.Site.Params.navbar.displayLogo | default true) }}
+      <img class="hx:mr-2 hx:block hx:dark:hidden" src="{{ $logoPath | relURL }}" alt="{{ cond $displayTitle `Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+      <img class="hx:mr-2 hx:hidden hx:dark:block" src="{{ $logoDarkPath | relURL }}" alt="{{ cond $displayTitle `Dark Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+    {{- end }}
+    {{- if $displayTitle }}
+      <span class="hx:font-extrabold hx:inline hx:select-none">{{- .Site.Title -}}</span>
+    {{- end }}
+  </a>
+
+  {{- partial "gn-repo-stars.html" . -}}
+
+  {{- with $versions }}
+    <details class="gn-version">
+      <summary aria-label="Select documentation version">
+        <span>{{ $current }}</span>
+        {{- partial "utils/icon.html" (dict "name" "chevron-down" "attributes" "height=12") -}}
+      </summary>
+      <div class="gn-version-menu" role="menu">
+        {{- range .versions }}
+          <a href="{{ .path }}" role="menuitem"
+             class="{{ if eq .label $current }}gn-version-active{{ end }}">
+            <span>{{ .label }}</span>
+            {{- if eq .state "latest" }}<em>latest</em>{{ end -}}
+            {{- if eq .state "dev" }}<em>unreleased</em>{{ end -}}
+          </a>
+        {{- end }}
+      </div>
+    </details>
+  {{- end }}
+</div>

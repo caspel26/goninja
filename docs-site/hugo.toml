@@ -10,6 +10,14 @@ enableGitInfo = true
   [[module.imports]]
     path = 'github.com/imfing/hextra'
 
+[security]
+  [security.funcs]
+    # Default policy is ['^HUGO_', '^CI$']. GITHUB_TOKEN is read by
+    # _partials/gn-repo-stars.html to authenticate the star-count request,
+    # since unauthenticated GitHub API calls are rate-limited per IP and CI
+    # runners share addresses.
+    getenv = ['^HUGO_', '^CI$', '^GITHUB_TOKEN$']
+
 [markup]
   [markup.highlight]
     noClasses = false
@@ -22,6 +30,16 @@ enableGitInfo = true
 
 [params]
   description = "Generate typed, validated REST APIs from annotated Go structs — no reflection, no runtime magic."
+
+  # Source of the star count in the navbar, fetched at build time.
+  repo = 'caspel26/goninja'
+
+  # Which documented version this build represents. scripts/build-docs.sh
+  # overrides both per version via HUGO_PARAMS_VERSIONLABEL/VERSIONSTATE; the
+  # defaults here describe a plain local `hugo serve` of the working tree.
+  # State is one of: latest | old | dev.
+  versionLabel = 'dev'
+  versionState = 'dev'
 
   [params.search]
     enable = true

@@ -1,0 +1,29 @@
+{{- /*
+  Fills the theme's banner slot with a warning when the reader is not on the
+  documentation for the newest release.
+
+  This deliberately emits inline content with no wrapper: the theme already
+  wraps the slot in `.hextra-banner` (with a close button), and nesting a
+  second styled container inside it looks wrong.
+
+  The slot itself only exists when `params.banner` is set, which
+  scripts/build-docs.sh does for the `dev` and `old` builds and not for
+  `latest`. Returning empty here would make the theme fall back to its own
+  default "Welcome" message, so the two have to agree.
+*/ -}}
+
+{{- $state := .Site.Params.versionState | default "dev" -}}
+{{- $label := .Site.Params.versionLabel | default "dev" -}}
+{{- $latest := "" -}}
+{{- with (index hugo.Data "versions") -}}
+  {{- $latest = .latest -}}
+{{- end -}}
+
+{{- if eq $state "dev" -}}
+  <span><strong>Development documentation</strong> — this describes the
+  <code>main</code> branch and may cover unreleased features.</span>
+  {{- with $latest }}<a href="/">Read the {{ . }} docs &rarr;</a>{{ end -}}
+{{- else if eq $state "old" -}}
+  <span>You are reading the <strong>{{ $label }}</strong> documentation.</span>
+  {{- with $latest }}<a href="/">{{ . }} is current &rarr;</a>{{ end -}}
+{{- end -}}

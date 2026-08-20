@@ -1,0 +1,47 @@
+{{- /*
+  Renders a star-count chip linking to the repository.
+
+  The count is fetched at build time, not from the browser, so a page view
+  costs no extra network request and the number can't rate-limit a visitor.
+  It goes stale between builds, which is fine for a star count.
+
+  Any failure — offline, rate-limited, unexpected payload — renders nothing
+  rather than failing the build. `GITHUB_TOKEN` is used when present, since
+  unauthenticated GitHub API calls are rate-limited per IP and CI runners
+  share addresses.
+*/ -}}
+
+{{- with .Site.Params.repo -}}
+  {{- $url := printf "https://api.github.com/repos/%s" . -}}
+  {{- $headers := dict "Accept" "application/vnd.github+json" -}}
+  {{- with getenv "GITHUB_TOKEN" -}}
+    {{- $headers = merge $headers (dict "Authorization" (printf "Bearer %s" .)) -}}
+  {{- end -}}
+
+  {{- $stars := 0 -}}
+  {{- with try (resources.GetRemote $url (dict "headers" $headers)) -}}
+    {{- if not .Err -}}
+      {{- with .Value -}}
+        {{- with try (transform.Unmarshal .Content) -}}
+          {{- if not .Err -}}
+            {{- $stars = (int (index .Value "stargazers_count" | default 0)) -}}
+          {{- end -}}
+        {{- end -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if gt $stars 0 -}}
+    {{- $label := printf "%d" $stars -}}
+    {{- if ge $stars 1000 -}}
+      {{- $label = printf "%.1fk" (div (float $stars) 1000.0) -}}
+    {{- end -}}
+    <a class="gn-chip gn-stars" href="https://github.com/{{ . }}"
+       title="{{ $stars }} {{ cond (eq $stars 1) "star" "stars" }} on GitHub" rel="noopener">
+      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor">
+        <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
+      </svg>
+      <span>{{ $label }}</span>
+    </a>
+  {{- end -}}
+{{- end -}}

@@ -5,7 +5,12 @@ on:
     branches: [main]
     paths:
       - "docs-site/**"
+      - "scripts/build-docs.sh"
       - ".github/workflows/docs.yml"
+  # A new release adds a version to the selector and moves what the site root
+  # serves, neither of which touches the paths above.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +29,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
+          # Released versions are built from their tags, so the full history
+          # and all tags have to be present.
+          fetch-depth: 0
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: docs-site/go.mod
@@ -32,14 +40,19 @@ jobs:
           hugo-version: "0.165.0"
           extended: true
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-      - name: Build
-        working-directory: docs-site
-        # baseURL comes from hugo.toml (custom domain), so it is deliberately
-        # not overridden with the Pages-provided URL here.
-        run: hugo --gc --minify
+      - name: Build all documented versions
+        # Builds the working tree as /dev/, each release tag as /vX.Y/, and the
+        # newest release at the root — one tree, one artifact. baseURL comes
+        # from the custom domain, not from the Pages-provided URL.
+        env:
+          BASE_URL: https://goninja.dev
+          # Authenticates the navbar star-count request; unauthenticated GitHub
+          # API calls are rate-limited per IP and runners share addresses.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/build-docs.sh "${{ github.workspace }}/public"
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
-          path: docs-site/public
+          path: public
 
   deploy:
     needs: build

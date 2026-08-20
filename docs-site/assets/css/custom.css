@@ -461,6 +461,142 @@ a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
 }
 
 /* --------------------------------------------------------------------------
+   Navbar chips — version selector and star count
+   -------------------------------------------------------------------------- */
+
+.gn-chip,
+.gn-version > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface-2);
+  color: color-mix(in oklab, var(--gn-text) 78%, transparent);
+  font-size: 0.75rem;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.gn-chip:hover,
+.gn-version > summary:hover {
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+}
+
+.gn-version {
+  position: relative;
+}
+
+.gn-version > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.gn-version > summary::-webkit-details-marker {
+  display: none;
+}
+
+.gn-version-menu {
+  position: absolute;
+  z-index: 30;
+  inset-inline-start: 0;
+  top: calc(100% + 0.35rem);
+  min-width: 11rem;
+  padding: 0.25rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  box-shadow: var(--gn-shadow);
+}
+
+.gn-version-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--gn-text);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.gn-version-menu a:hover {
+  background: var(--gn-surface-2);
+}
+
+.gn-version-menu a em {
+  font-style: normal;
+  font-size: 0.6875rem;
+  color: color-mix(in oklab, var(--gn-text) 55%, transparent);
+}
+
+.gn-version-menu a.gn-version-active {
+  color: hsl(var(--primary-hue) var(--primary-saturation) 50%);
+  font-weight: 600;
+}
+
+.dark .gn-version-menu a.gn-version-active {
+  color: hsl(var(--primary-hue) var(--primary-saturation) 72%);
+}
+
+/* Hide the chips on narrow screens, where navbar space is at a premium. */
+@media (max-width: 42rem) {
+  .gn-chip,
+  .gn-version {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Version banner
+   -------------------------------------------------------------------------- */
+
+/* The theme paints this neutral-900; brand it instead. The content comes from
+   _partials/custom/banner.html, which emits inline nodes only. */
+.hextra-banner {
+  background: linear-gradient(
+    92deg,
+    hsl(274 58% 34%) 0%,
+    hsl(262 62% 40%) 55%,
+    hsl(194 58% 34%) 100%
+  ) !important;
+  font-size: 0.8125rem;
+}
+
+.hextra-banner strong {
+  font-weight: 680;
+}
+
+.hextra-banner code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: hsl(0 0% 100% / 0.14);
+  font-family: var(--gn-font-mono);
+  font-size: 0.75rem;
+}
+
+.hextra-banner a {
+  margin-inline-start: 0.5rem;
+  color: #fff;
+  font-weight: 620;
+  text-decoration: underline;
+  text-decoration-color: hsl(0 0% 100% / 0.45);
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.hextra-banner a:hover {
+  text-decoration-color: #fff;
+}
+
+/* --------------------------------------------------------------------------
    Search
    -------------------------------------------------------------------------- */
 

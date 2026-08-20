@@ -1,0 +1,7 @@
+{
+  "latest": "v0.1",
+  "versions": [
+    { "label": "dev", "path": "/dev/", "state": "dev" },
+    { "label": "v0.1", "path": "/v0.1/", "state": "latest" }
+  ]
+}

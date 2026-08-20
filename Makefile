@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt cover generate-prototype run-prototype
+.PHONY: build test vet fmt cover generate-prototype run-prototype docs docs-serve
 
 build:
 	go build ./...
@@ -32,3 +32,13 @@ generate-prototype:
 
 run-prototype: generate-prototype
 	cd examples/prototype && go run .
+
+# Builds every documented version into ./public: the working tree as /dev/,
+# each release tag as /vX.Y/, and the newest release at the root. This is what
+# CI publishes; BASE_URL=http://localhost:1313 for a local preview.
+docs:
+	./scripts/build-docs.sh
+
+# Live preview of the working tree only, without the version subdirectories.
+docs-serve:
+	cd docs-site && hugo serve --buildDrafts
