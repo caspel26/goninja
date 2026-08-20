@@ -70,7 +70,7 @@ An unknown or misspelled `order` value is a **400**, raised while parsing the
 query string rather than ignored in the query:
 
 ```json
-{ "code": "BAD_REQUEST", "error": "cannot order by \"titel\"" }
+{ "code": "INVALID_ORDER_FIELD", "error": "cannot order by \"titel\"" }
 ```
 
 The whitelist is also what makes ordering safe against SQL injection: nothing

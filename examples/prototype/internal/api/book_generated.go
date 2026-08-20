@@ -357,6 +357,7 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 		if _, ok := bookOrderableColumns[field]; !ok {
 			return f, goninja.BadRequest{
 				Detail: "cannot order by \"" + field + "\"",
+				Code:   "INVALID_ORDER_FIELD",
 			}
 		}
 		f.Order = order

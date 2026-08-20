@@ -286,6 +286,7 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 		if _, ok := authorOrderableColumns[field]; !ok {
 			return f, goninja.BadRequest{
 				Detail: "cannot order by \"" + field + "\"",
+				Code:   "INVALID_ORDER_FIELD",
 			}
 		}
 		f.Order = order

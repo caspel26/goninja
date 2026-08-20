@@ -284,6 +284,7 @@ func parseTaskFilters(req *http.Request) (TaskFilters, error) {
 		if _, ok := taskOrderableColumns[field]; !ok {
 			return f, goninja.BadRequest{
 				Detail: "cannot order by \"" + field + "\"",
+				Code:   "INVALID_ORDER_FIELD",
 			}
 		}
 		f.Order = order

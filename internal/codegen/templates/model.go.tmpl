@@ -426,6 +426,7 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 		if _, ok := {{.Model.NameLower}}OrderableColumns[field]; !ok {
 			return f, goninja.BadRequest{
 				Detail: "cannot order by \"" + field + "\"",
+				Code:   "INVALID_ORDER_FIELD",
 			}
 		}
 		f.Order = order

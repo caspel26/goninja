@@ -19,7 +19,12 @@ func TestDefaultErrorMapper_MapError(t *testing.T) {
 		{"not found", NotFound{Resource: "Book", ID: 1}, http.StatusNotFound, "NOT_FOUND"},
 		{"validation error", ValidationError{Fields: map[string]string{"name": "required"}}, http.StatusUnprocessableEntity, "VALIDATION_FAILED"},
 		{"bad request", BadRequest{Detail: "bad"}, http.StatusBadRequest, "BAD_REQUEST"},
+		{"unauthorized", Unauthorized{}, http.StatusUnauthorized, "UNAUTHORIZED"},
 		{"unknown error", errors.New("boom"), http.StatusInternalServerError, "INTERNAL"},
+		{"not found with custom code", NotFound{Resource: "Book", ID: 1, Code: "BOOK_NOT_FOUND"}, http.StatusNotFound, "BOOK_NOT_FOUND"},
+		{"validation error with custom code", ValidationError{Fields: map[string]string{"name": "required"}, Code: "CUSTOM_VALIDATION"}, http.StatusUnprocessableEntity, "CUSTOM_VALIDATION"},
+		{"bad request with custom code", BadRequest{Detail: "bad", Code: "INVALID_ORDER_FIELD"}, http.StatusBadRequest, "INVALID_ORDER_FIELD"},
+		{"unauthorized with custom code", Unauthorized{Code: "TOKEN_EXPIRED"}, http.StatusUnauthorized, "TOKEN_EXPIRED"},
 	}
 
 	for _, tt := range tests {

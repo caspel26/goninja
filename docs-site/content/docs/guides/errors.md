@@ -4,22 +4,30 @@ weight: 4
 ---
 goninja maps a small set of error types to HTTP responses through the `goninja.ErrorMapper` interface. Generated handlers, your own hooks, and your own custom actions all funnel errors through the same mapping, so the response shape stays consistent across a resource.
 
-## The three error types
+## The four error types
 
-All three are plain struct values, constructed as literals — not pointers.
+All four are plain struct values, constructed as literals — not pointers.
 
 ```go
 type NotFound struct {
 	Resource string
 	ID       any
+	Code     string
 }
 
 type ValidationError struct {
 	Fields map[string]string
+	Code   string
 }
 
 type BadRequest struct {
 	Detail string
+	Code   string
+}
+
+type Unauthorized struct {
+	Detail string
+	Code   string
 }
 ```
 
@@ -43,6 +51,25 @@ Use each for a distinct situation:
   return goninja.BadRequest{Detail: "invalid price_min"}
   ```
 
+- **`Unauthorized`** — every configured `Authenticator` declined the request. Generated code returns this itself (see [Authentication](../auth)); you'd only construct it directly from your own middleware or custom action.
+
+  ```go
+  return goninja.Unauthorized{Detail: "token expired"}
+  ```
+
+## Code: a machine-readable identifier, separate from the status
+
+Every one of the four types has an optional `Code` field. Left unset, each type falls back to its own conventional default (`"NOT_FOUND"`, `"VALIDATION_FAILED"`, `"BAD_REQUEST"`, `"UNAUTHORIZED"`) — the same strings the JSON body has always returned. Setting `Code` lets a specific failure carry a more precise identifier than the HTTP status alone provides, the way Stripe or Google's APIs attach a stable string code alongside a human-readable message:
+
+```go
+return goninja.BadRequest{
+	Detail: "cannot order by \"" + field + "\"",
+	Code:   "INVALID_ORDER_FIELD",
+}
+```
+
+A client can then branch on `code` (stable, meant for program logic) instead of parsing `error` (a message meant for humans, free to reword). All four types implement `goninja.CodedError` (`error` plus `ErrorCode() string`), which is how `DefaultErrorMapper` resolves the body's `"code"` field — call `ErrorCode()` yourself if you're writing a custom mapper and want the same default-or-override behavior for one of these types.
+
 ## Status and body mapping
 
 `DefaultErrorMapper{}` matches errors with `errors.As` and maps them like this:
@@ -52,7 +79,10 @@ Use each for a distinct situation:
 | `NotFound` | 404 | `{"code":"NOT_FOUND","error":"<resource> <id> not found"}` |
 | `ValidationError` | 422 | `{"code":"VALIDATION_FAILED","errors":{"<field>":"<tag>"}}` |
 | `BadRequest` | 400 | `{"code":"BAD_REQUEST","error":"<detail>"}` |
+| `Unauthorized` | 401 | `{"code":"UNAUTHORIZED","error":"unauthorized"}` |
 | anything else | 500 | `{"code":"INTERNAL","error":"internal error"}` |
+
+`"code"` in each row above is that type's default — set `Code` on the error value to override it, as shown above.
 
 The 500 case never leaks the underlying error message to the client — whatever the actual error says, the client only ever sees `"internal error"`.
 

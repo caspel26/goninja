@@ -29,6 +29,20 @@ Release notes with more context live at
 
 - `codegen.Validate`, and `Model.SourceFile` so a rejection can point at the
   file the struct was declared in.
+- **`goninja.Unauthorized`**, a new framework error type mapped to 401 by
+  `DefaultErrorMapper`. Every configured `Authenticator` declining a request
+  now returns a proper JSON body (`{"code":"UNAUTHORIZED","error":"unauthorized"}`)
+  through the same `Respond` path as every other error, instead of the plain
+  `http.Error` text response it returned before.
+- **An optional `Code` field on every framework error type**
+  (`NotFound`, `ValidationError`, `BadRequest`, `Unauthorized`). Left unset,
+  each type keeps its existing default JSON `"code"` (`NOT_FOUND`,
+  `VALIDATION_FAILED`, `BAD_REQUEST`, `UNAUTHORIZED`); setting it lets a
+  specific failure carry a more precise machine-readable identifier than the
+  HTTP status alone provides, e.g. the unknown-`?order=`-field 400 above now
+  sets `Code: "INVALID_ORDER_FIELD"`. All four types implement the new
+  `goninja.CodedError` interface (`error` plus `ErrorCode() string`), which
+  is what `DefaultErrorMapper` calls to resolve the body's `"code"` field.
 
 ## [0.1.0] - 2026-08-20
 

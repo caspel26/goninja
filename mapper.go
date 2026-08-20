@@ -17,15 +17,16 @@ type ErrorMapper interface {
 
 // DefaultErrorMapper is the ErrorMapper used when a resource has none
 // configured. It maps the framework's own error types (NotFound,
-// ValidationError, BadRequest) to their conventional status codes and
-// everything else to 500, without leaking the underlying error message.
+// ValidationError, BadRequest, Unauthorized) to their conventional status
+// codes and everything else to 500, without leaking the underlying error
+// message.
 type DefaultErrorMapper struct{}
 
 func (DefaultErrorMapper) MapError(err error) (int, any) {
 	var nf NotFound
 	if errors.As(err, &nf) {
 		return http.StatusNotFound, map[string]string{
-			"code":  "NOT_FOUND",
+			"code":  nf.ErrorCode(),
 			"error": nf.Error(),
 		}
 	}
@@ -33,7 +34,7 @@ func (DefaultErrorMapper) MapError(err error) (int, any) {
 	var ve ValidationError
 	if errors.As(err, &ve) {
 		return http.StatusUnprocessableEntity, map[string]any{
-			"code":   "VALIDATION_FAILED",
+			"code":   ve.ErrorCode(),
 			"errors": ve.Fields,
 		}
 	}
@@ -41,8 +42,16 @@ func (DefaultErrorMapper) MapError(err error) (int, any) {
 	var br BadRequest
 	if errors.As(err, &br) {
 		return http.StatusBadRequest, map[string]string{
-			"code":  "BAD_REQUEST",
+			"code":  br.ErrorCode(),
 			"error": br.Detail,
+		}
+	}
+
+	var ua Unauthorized
+	if errors.As(err, &ua) {
+		return http.StatusUnauthorized, map[string]string{
+			"code":  ua.ErrorCode(),
+			"error": ua.Error(),
 		}
 	}
 

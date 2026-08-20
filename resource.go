@@ -219,7 +219,7 @@ func requireAuth(auths []Authenticator, next http.Handler) http.Handler {
 				return
 			}
 		}
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		Respond(w, nil, Unauthorized{})
 	})
 }
 
