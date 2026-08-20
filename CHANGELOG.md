@@ -13,6 +13,15 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Changed
+
+- **`docsui.SpecSource` renamed to `docsui.SpecProvider`** — `docsui/docs.go`
+
+  A SonarQube naming-convention fix (single-method interfaces should end
+  in `-er`), matching the existing `openapi.OpenAPIProvider` precedent. A
+  breaking rename for any caller referencing the type by name directly —
+  pre-alpha, no compatibility shim.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

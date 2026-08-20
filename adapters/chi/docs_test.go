@@ -11,15 +11,15 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type fakeSpecSource struct{}
+type fakeSpecProvider struct{}
 
-func (fakeSpecSource) Spec() openapi.Spec {
+func (fakeSpecProvider) Spec() openapi.Spec {
 	return openapi.Spec{OpenAPI: "3.0.3", Info: openapi.Info{Title: "Test", Version: "1.0.0"}}
 }
 
 func TestAdapter_MountDocsServesSpecAndIndex(t *testing.T) {
 	r := chi.NewRouter()
-	docsui.MountDocs(chiadapter.New(r), fakeSpecSource{}, "/docs", docsui.SwaggerUI())
+	docsui.MountDocs(chiadapter.New(r), fakeSpecProvider{}, "/docs", docsui.SwaggerUI())
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()

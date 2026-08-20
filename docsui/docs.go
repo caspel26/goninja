@@ -1,6 +1,6 @@
 // Package docsui renders a documentation viewer (Swagger UI or ReDoc, both
 // vendored/embedded — no external CDN) for a merged OpenAPI document.
-// MountDocs takes a SpecSource interface rather than a concrete document
+// MountDocs takes a SpecProvider interface rather than a concrete document
 // type so this package never has to import goninja.API's package directly
 // (goninja already imports docsui, so importing back would cycle).
 package docsui
@@ -39,11 +39,11 @@ type DocsAsset struct {
 	ContentType string
 }
 
-// SpecSource is anything that can produce a merged OpenAPI document —
+// SpecProvider is anything that can produce a merged OpenAPI document —
 // goninja.API (root package) is the usual one, but MountDocs only needs
 // this narrow interface rather than importing that concrete type, which
 // would cycle back to root (see the package doc comment).
-type SpecSource interface {
+type SpecProvider interface {
 	Spec() openapi.Spec
 }
 
@@ -55,7 +55,7 @@ type SpecSource interface {
 // "<path>/" is the page's actual base URL). ui selects the renderer —
 // pass SwaggerUI() or ReDoc() (both fully embedded, no external CDN) or
 // your own DocsUI; nil defaults to SwaggerUI().
-func MountDocs(mux router.Router, api SpecSource, path string, ui DocsUI) {
+func MountDocs(mux router.Router, api SpecProvider, path string, ui DocsUI) {
 	if ui == nil {
 		ui = SwaggerUI()
 	}

@@ -11,15 +11,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-type fakeSpecSource struct{}
+type fakeSpecProvider struct{}
 
-func (fakeSpecSource) Spec() openapi.Spec {
+func (fakeSpecProvider) Spec() openapi.Spec {
 	return openapi.Spec{OpenAPI: "3.0.3", Info: openapi.Info{Title: "Test", Version: "1.0.0"}}
 }
 
 func TestAdapter_MountDocsServesSpecAndIndex(t *testing.T) {
 	e := echo.New()
-	docsui.MountDocs(echoadapter.New(e), fakeSpecSource{}, "/docs", docsui.SwaggerUI())
+	docsui.MountDocs(echoadapter.New(e), fakeSpecProvider{}, "/docs", docsui.SwaggerUI())
 
 	srv := httptest.NewServer(e)
 	defer srv.Close()

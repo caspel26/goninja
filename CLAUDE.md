@@ -187,7 +187,7 @@ and router-wiring helpers) were pulled out of `openapi` and now live in
 root as `goninja.API`/`API.Mount`/`API.MountWithConfig`/`goninja.Resource` —
 `openapi` keeps only the wire-format types (`Schema`, `PathItem`, `Spec`,
 ...) and `OpenAPIProvider`. `docsui.MountDocs` no longer takes a concrete
-`*openapi.API`; it takes a `docsui.SpecSource` interface (`Spec()
+`*openapi.API`; it takes a `docsui.SpecProvider` interface (`Spec()
 openapi.Spec`), which `goninja.API` satisfies structurally — this keeps
 `docsui` from having to import root `goninja` back (root already imports
 `docsui` for `API.MountDocs`), so the dependency graph stays acyclic. The
@@ -334,7 +334,7 @@ Four pieces:
      document out of these and mounts resources on a router.
    - **`docsui`** (depends on `openapi`): `MountDocs(mux, api, path, ui)`
      serves a merged spec as JSON plus a rendered UI — `api` only needs to
-     satisfy `docsui.SpecSource` (`Spec() openapi.Spec`), which `goninja.API`
+     satisfy `docsui.SpecProvider` (`Spec() openapi.Spec`), which `goninja.API`
      does; `ui` is the `DocsUI` interface (`Index`/`Assets`), not a
      hardcoded renderer. `SwaggerUI()`/`ReDoc()` both ship built in, each
      with its own vendored assets under `docsui/swagger-ui/`/`docsui/redoc/`

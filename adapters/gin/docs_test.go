@@ -11,15 +11,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type fakeSpecSource struct{}
+type fakeSpecProvider struct{}
 
-func (fakeSpecSource) Spec() openapi.Spec {
+func (fakeSpecProvider) Spec() openapi.Spec {
 	return openapi.Spec{OpenAPI: "3.0.3", Info: openapi.Info{Title: "Test", Version: "1.0.0"}}
 }
 
 func TestAdapter_MountDocsServesSpecAndIndex(t *testing.T) {
 	engine := gin.New()
-	docsui.MountDocs(ginadapter.New(engine), fakeSpecSource{}, "/docs", docsui.SwaggerUI())
+	docsui.MountDocs(ginadapter.New(engine), fakeSpecProvider{}, "/docs", docsui.SwaggerUI())
 
 	srv := httptest.NewServer(engine)
 	defer srv.Close()
