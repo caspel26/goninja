@@ -31,11 +31,12 @@ jobs:
         with:
           hugo-version: "0.165.0"
           extended: true
-      - id: pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Build
         working-directory: docs-site
-        run: hugo --minify --baseURL "${{ steps.pages.outputs.base_url }}/"
+        # baseURL comes from hugo.toml (custom domain), so it is deliberately
+        # not overridden with the Pages-provided URL here.
+        run: hugo --gc --minify
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: docs-site/public
