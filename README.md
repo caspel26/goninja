@@ -21,7 +21,8 @@
   <a href="https://goninja.dev/docs/getting-started/">Getting Started</a> ·
   <a href="https://goninja.dev/docs/guides/">Guides</a> ·
   <a href="https://goninja.dev/docs/reference/tags/">Reference</a> ·
-  <a href="https://goninja.dev/docs/examples/">Examples</a>
+  <a href="https://goninja.dev/docs/examples/">Examples</a> ·
+  <a href="https://goninja.dev/docs/changelog/">Changelog</a>
 </p>
 
 ---
@@ -130,6 +131,7 @@ Everything lives at **[goninja.dev](https://goninja.dev)**.
 | [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
 | [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
 | [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
+| [Changelog](https://goninja.dev/docs/changelog/) | What each release added, and what it broke |
 
 ---
 
