@@ -1,8 +1,10 @@
-baseURL = 'https://caspel26.github.io/goninja/'
+baseURL = 'https://goninja.dev/'
 locale = 'en-us'
 title = 'goninja'
 
 theme = 'github.com/imfing/hextra'
+
+enableGitInfo = true
 
 [module]
   [[module.imports]]
@@ -11,22 +13,55 @@ theme = 'github.com/imfing/hextra'
 [markup]
   [markup.highlight]
     noClasses = false
+    lineNumbersInTable = false
   [markup.goldmark.renderer]
     unsafe = true
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
 
 [params]
   description = "Generate typed, validated REST APIs from annotated Go structs — no reflection, no runtime magic."
 
+  [params.search]
+    enable = true
+    type = 'flexsearch'
+    [params.search.flexsearch]
+      index = 'content'
+
   [params.theme]
     default = 'system'
+    displayToggle = true
 
   [params.navbar]
     displayTitle = true
-    displayLogo = false
+    displayLogo = true
+    width = 'wide'
+
+    [params.navbar.logo]
+      path = 'images/logo.png'
+      width = 26
+      height = 26
+
+  [params.page]
+    width = 'normal'
 
   [params.footer]
-    displayCopyright = true
-    displayPoweredBy = true
+    enable = true
+    displayCopyright = false
+    displayPoweredBy = false
+    width = 'normal'
+
+  [params.editURL]
+    enable = true
+    base = 'https://github.com/caspel26/goninja/edit/main/docs-site/content'
+
+  [params.toc]
+    displayTags = true
+
+  [params.blog]
+    [params.blog.list]
+      displayTags = true
 
 [[menu.main]]
   identifier = 'docs'
@@ -35,8 +70,20 @@ theme = 'github.com/imfing/hextra'
   weight = 1
 
 [[menu.main]]
-  name = 'GitHub'
-  url = 'https://github.com/caspel26/goninja'
+  identifier = 'examples'
+  name = 'Examples'
+  pageRef = '/docs/examples'
   weight = 2
+
+[[menu.main]]
+  name = 'Search'
+  weight = 3
+  [menu.main.params]
+    type = 'search'
+
+[[menu.main]]
+  name = 'GitHub'
+  weight = 4
+  url = 'https://github.com/caspel26/goninja'
   [menu.main.params]
     icon = 'github'

@@ -1,8 +1,7 @@
 ---
-title: Custom Path and Restricted Routes
-weight: 3
+title: Paths & Route Config
+weight: 7
 ---
-
 The same `SetSelf` wrapper can implement `goninja.Configurer` to override
 the resource's mount path or drop routes it shouldn't expose — both
 `Register(mux)` and the generated OpenAPI fragment pick this up:

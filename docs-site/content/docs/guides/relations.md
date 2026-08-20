@@ -1,8 +1,7 @@
 ---
-title: "Relations: Nested or by ID"
-weight: 6
+title: Relations
+weight: 3
 ---
-
 A relation field is nested as the related model's own `Retrieve` type by
 default — the full object, `Preload`ed automatically:
 

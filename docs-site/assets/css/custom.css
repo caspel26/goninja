@@ -1,0 +1,468 @@
+/* ==========================================================================
+   goninja docs — brand theme
+   Palette sampled from the project logo:
+     purple  #61278E  hsl(274 57% 36%)   — primary
+     cyan    #3DA3C2  hsl(194 52% 50%)   — accent
+     ink     #0D0C14                     — dark surface
+   ========================================================================== */
+
+:root {
+  /* Hextra derives its whole primary-* scale from these three. */
+  --primary-hue: 274deg;
+  --primary-saturation: 52%;
+  --primary-lightness: 44%;
+
+  --gn-accent: hsl(194 62% 42%);
+  --gn-accent-soft: hsl(194 62% 96%);
+  --gn-purple: hsl(274 57% 42%);
+  --gn-ink: #0d0c14;
+
+  --gn-surface: #ffffff;
+  --gn-surface-2: hsl(274 20% 98%);
+  --gn-border: hsl(274 12% 90%);
+  --gn-code-bg: hsl(274 24% 97.5%);
+  --gn-shadow: 0 1px 2px hsl(274 20% 20% / 0.04), 0 8px 24px -12px hsl(274 40% 20% / 0.12);
+
+  --gn-font-sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --gn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, monospace;
+}
+
+.dark {
+  --primary-hue: 276deg;
+  --primary-saturation: 62%;
+  --primary-lightness: 66%;
+
+  --gn-accent: hsl(194 75% 62%);
+  --gn-accent-soft: hsl(194 60% 18%);
+  --gn-purple: hsl(276 70% 72%);
+
+  --gn-surface: #0d0c14;
+  --gn-surface-2: #14121d;
+  --gn-border: hsl(274 18% 22%);
+  --gn-code-bg: hsl(274 22% 10%);
+  --gn-shadow: 0 1px 2px hsl(274 40% 2% / 0.4), 0 8px 24px -12px hsl(274 60% 2% / 0.6);
+}
+
+/* --------------------------------------------------------------------------
+   Typography — tighter, more compact than the theme default
+   -------------------------------------------------------------------------- */
+
+html {
+  font-family: var(--gn-font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--gn-surface);
+}
+
+code,
+kbd,
+pre,
+samp,
+.hextra-code-block code {
+  font-family: var(--gn-font-mono);
+  font-variant-ligatures: none;
+}
+
+/* Compact the article: smaller base size, tighter rhythm. */
+article.content,
+.content {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.content h1 {
+  font-size: 2rem;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-weight: 750;
+  margin-bottom: 0.35em;
+}
+
+.content h2 {
+  font-size: 1.375rem;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  font-weight: 680;
+  margin-top: 2.25rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--gn-border);
+}
+
+.content h3 {
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  font-weight: 660;
+  margin-top: 1.75rem;
+}
+
+.content h4 {
+  font-size: 0.9375rem;
+  font-weight: 660;
+  margin-top: 1.35rem;
+}
+
+/* Anchor links: brand colour instead of grey. */
+.content h2 a.subheading-anchor,
+.content h3 a.subheading-anchor,
+.content h4 a.subheading-anchor {
+  color: var(--gn-accent);
+}
+
+/* --------------------------------------------------------------------------
+   Inline code — cyan-tinted, no bracket noise
+   -------------------------------------------------------------------------- */
+
+.content :not(pre) > code {
+  background: var(--gn-accent-soft);
+  color: var(--gn-accent);
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  padding: 0.1em 0.36em;
+  font-size: 0.86em;
+  font-weight: 500;
+}
+
+.dark .content :not(pre) > code {
+  background: hsl(194 45% 14%);
+  color: hsl(194 80% 70%);
+}
+
+/* Code inside a link keeps the link colour. */
+.content a > code {
+  background: transparent;
+  color: inherit;
+  text-decoration: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   Code blocks — rounded, bordered, brand-tinted
+   -------------------------------------------------------------------------- */
+
+/* NOTE: do not override padding here. The theme absolutely-positions
+   .hextra-code-filename over the top of the <pre> and compensates with a
+   large padding-top; overriding it hides the first line of code. */
+.hextra-code-block pre,
+.content pre {
+  border-radius: 0.625rem !important;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-code-bg) !important;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+.hextra-code-block {
+  box-shadow: var(--gn-shadow);
+  border-radius: 0.625rem;
+  margin-block: 1.25rem;
+}
+
+/* Filename label. The theme positions and pads this; only restyle its
+   appearance so the layout contract above stays intact. */
+.hextra-code-filename {
+  font-family: var(--gn-font-mono);
+  font-size: 0.7188rem;
+  letter-spacing: 0.01em;
+  border-bottom: 1px solid var(--gn-border);
+}
+
+/* Copy button: brand hover. */
+.hextra-code-copy-btn:hover {
+  border-color: var(--gn-accent);
+  color: var(--gn-accent);
+}
+
+/* --------------------------------------------------------------------------
+   Links
+   -------------------------------------------------------------------------- */
+
+.content a:not(.hextra-card):not(.no-underline) {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  text-decoration-color: hsl(var(--primary-hue) var(--primary-saturation) 60% / 0.4);
+  transition: text-decoration-color 0.15s ease, color 0.15s ease;
+}
+
+.content a:not(.hextra-card):not(.no-underline):hover {
+  text-decoration-color: currentColor;
+}
+
+/* --------------------------------------------------------------------------
+   Sidebar — compact, brand active state
+   -------------------------------------------------------------------------- */
+
+.sidebar-container {
+  font-size: 0.8125rem;
+}
+
+.sidebar-container li > a,
+.sidebar-container li > button {
+  border-radius: 0.5rem !important;
+  padding-block: 0.3rem !important;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+/* Active page: soft brand pill with a leading rule. */
+.sidebar-active-item {
+  position: relative;
+  font-weight: 600;
+}
+
+.sidebar-container .sidebar-active-item::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.3rem;
+  inset-inline-start: -0.5rem;
+  width: 2px;
+  border-radius: 2px;
+  background: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness));
+}
+
+/* Section headings in the sidebar. */
+.sidebar-container .menu-inner > ul > li > a,
+.sidebar-container .menu-inner > ul > li > button {
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Navbar — brand underline on hover, tighter height
+   -------------------------------------------------------------------------- */
+
+.nav-container .hx\:font-medium,
+.nav-container a {
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.nav-container-blur {
+  backdrop-filter: saturate(180%) blur(14px);
+}
+
+/* Wordmark next to the logo. */
+.nav-container a > span {
+  letter-spacing: -0.02em;
+}
+
+/* --------------------------------------------------------------------------
+   Tables — cleaner, denser
+   -------------------------------------------------------------------------- */
+
+.content table {
+  font-size: 0.8438rem;
+  border-collapse: collapse;
+  width: 100%;
+  display: table;
+  overflow-x: auto;
+}
+
+.content th {
+  background: var(--gn-surface-2);
+  font-weight: 640;
+  letter-spacing: 0.01em;
+  text-align: start;
+}
+
+.content th,
+.content td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--gn-border);
+  vertical-align: top;
+}
+
+.content table code {
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   Callouts — brand-tinted, flatter
+   -------------------------------------------------------------------------- */
+
+.hextra-callout {
+  border-radius: 0.625rem;
+  border-inline-start-width: 3px;
+  font-size: 0.875rem;
+}
+
+/* --------------------------------------------------------------------------
+   Cards / feature grid — modern, hover lift, gradient edge
+   -------------------------------------------------------------------------- */
+
+.hextra-card {
+  border-radius: 0.75rem !important;
+  border: 1px solid var(--gn-border) !important;
+  background: var(--gn-surface);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.hextra-card:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--primary-hue) var(--primary-saturation) 60% / 0.55) !important;
+  box-shadow: var(--gn-shadow);
+}
+
+.hextra-feature-card {
+  border-radius: 0.875rem !important;
+  border: 1px solid var(--gn-border);
+  background:
+    linear-gradient(180deg, hsl(274 30% 99%) 0%, hsl(274 20% 97%) 100%);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.dark .hextra-feature-card {
+  background: linear-gradient(180deg, #15131f 0%, #100e18 100%);
+}
+
+.hextra-feature-card:hover {
+  transform: translateY(-3px);
+  border-color: hsl(var(--primary-hue) var(--primary-saturation) 62% / 0.5);
+  box-shadow: var(--gn-shadow);
+}
+
+/* --------------------------------------------------------------------------
+   Home hero
+
+   NOTE: Hextra's hero shortcodes emit Tailwind utility classes, not semantic
+   `hextra-hero-*` classes, so these hook onto what is actually rendered:
+   an h1/h2 carrying `not-prose` plus a `bg-clip-text` gradient.
+   -------------------------------------------------------------------------- */
+
+h1.not-prose[class*="bg-clip-text"],
+h2.not-prose[class*="bg-clip-text"] {
+  letter-spacing: -0.035em;
+  background-image: linear-gradient(
+    92deg,
+    hsl(274 62% 40%) 0%,
+    hsl(262 68% 50%) 42%,
+    hsl(194 66% 44%) 100%
+  ) !important;
+}
+
+.dark h1.not-prose[class*="bg-clip-text"],
+.dark h2.not-prose[class*="bg-clip-text"] {
+  background-image: linear-gradient(
+    92deg,
+    hsl(276 78% 80%) 0%,
+    hsl(262 80% 78%) 42%,
+    hsl(194 78% 66%) 100%
+  ) !important;
+}
+
+/* Hero subtitle: keep it readable rather than gradient-filled. */
+p.not-prose[class*="text-xl"] {
+  letter-spacing: -0.01em;
+  max-width: 46rem;
+}
+
+/* Primary CTA — the pill-shaped hero button. */
+a.not-prose[class*="bg-primary-600"][class*="rounded-full"] {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background-image: linear-gradient(
+    100deg,
+    hsl(274 58% 44%) 0%,
+    hsl(262 62% 52%) 100%
+  );
+  box-shadow: 0 1px 2px hsl(274 60% 20% / 0.2), 0 8px 20px -10px hsl(274 70% 40% / 0.45);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 1px 2px hsl(274 60% 20% / 0.24), 0 12px 26px -10px hsl(274 70% 40% / 0.55);
+}
+
+/* --------------------------------------------------------------------------
+   Search
+   -------------------------------------------------------------------------- */
+
+.hextra-search-wrapper input {
+  border-radius: 0.5rem;
+  font-size: 0.8438rem;
+}
+
+.hextra-search-wrapper input:focus {
+  border-color: hsl(var(--primary-hue) var(--primary-saturation) 60%);
+  box-shadow: 0 0 0 3px hsl(var(--primary-hue) var(--primary-saturation) 60% / 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+
+.hextra-footer {
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--gn-border);
+}
+
+/* --------------------------------------------------------------------------
+   Screenshots / figures
+   -------------------------------------------------------------------------- */
+
+.content img {
+  border-radius: 0.625rem;
+}
+
+.content figure {
+  margin-block: 1.5rem;
+}
+
+.content figure img {
+  border: 1px solid var(--gn-border);
+  box-shadow: var(--gn-shadow);
+}
+
+.content figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.8125rem;
+  color: hsl(274 8% 48%);
+  text-align: center;
+}
+
+.dark .content figcaption {
+  color: hsl(274 10% 62%);
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbars
+   -------------------------------------------------------------------------- */
+
+@supports selector(::-webkit-scrollbar) {
+  .sidebar-container::-webkit-scrollbar,
+  .hextra-code-block pre::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .sidebar-container::-webkit-scrollbar-thumb,
+  .hextra-code-block pre::-webkit-scrollbar-thumb {
+    border-radius: 99px;
+    background: hsl(274 12% 78%);
+  }
+
+  .dark .sidebar-container::-webkit-scrollbar-thumb,
+  .dark .hextra-code-block pre::-webkit-scrollbar-thumb {
+    background: hsl(274 14% 30%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+
+  .hextra-card:hover,
+  .hextra-feature-card:hover,
+  a.hextra-hero-button:hover {
+    transform: none;
+  }
+}

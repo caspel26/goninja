@@ -3,6 +3,11 @@
 </p>
 
 <p align="center">
+  <b>Generate typed, validated REST APIs from annotated Go structs.</b><br>
+  <sub>No reflection. No runtime magic. Just Go you can read.</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/caspel26/goninja/actions/workflows/go.yml"><img src="https://github.com/caspel26/goninja/actions/workflows/go.yml/badge.svg" alt="Build Status"></a>
   <a href="https://sonarcloud.io/summary/new_code?id=caspel26_goninja"><img src="https://sonarcloud.io/api/project_badges/measure?project=caspel26_goninja&metric=alert_status" alt="SonarQube Quality Gate"></a>
   <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/caspel26/goninja/main/coverage-badge.json" alt="Coverage">
@@ -12,161 +17,127 @@
 </p>
 
 <p align="center">
-  <b>Generate typed, validated REST APIs from annotated Go structs — no reflection, no runtime magic.</b>
+  <a href="https://goninja.dev"><b>goninja.dev</b></a> ·
+  <a href="https://goninja.dev/docs/getting-started/">Getting Started</a> ·
+  <a href="https://goninja.dev/docs/guides/">Guides</a> ·
+  <a href="https://goninja.dev/docs/reference/tags/">Reference</a> ·
+  <a href="https://goninja.dev/docs/examples/">Examples</a>
+</p>
+
+---
+
+Annotate a struct. Run one command. Get a complete CRUD REST API — routing,
+validation, serialization, filters, pagination and OpenAPI.
+
+## See it in action
+
+<p align="center">
+  <img src="docs/demo/vscode-demo.gif" alt="Editor animation: a Book struct is annotated with goninja struct tags, goninja generate runs in the integrated terminal and reports the models it wrote, then a second tab appears containing the generated book_generated.go with its BookList output type." width="820">
 </p>
 
 <p align="center">
-  <a href="https://caspel26.github.io/goninja/docs/getting-started/">Full documentation →</a>
+  The tags <i>are</i> the API definition. <code>goninja generate</code> turns them into
+  real Go — output types, handlers, queries and an OpenAPI fragment — in a file
+  you commit and can read.
 </p>
-
-Code-first Go framework for generating complete CRUD REST APIs from
-annotated structs: routing, input/output validation, serialization,
-OpenAPI, filters, pagination.
-
-Define your model once, annotate its fields, and generate the rest.
 
 ```go
 // models/book.go
 type Book struct {
     ID        string    `gorm:"primaryKey;type:uuid" goninja:"list,retrieve"`
-    Title     string    `gorm:"size:120;not null" goninja:"list,retrieve,create,update" validate:"required,max=120"`
-    AuthorID  string    `goninja:"list,retrieve,create,update,filter"`
+    Title     string    `goninja:"list,retrieve,create,update" validate:"required,max=200"`
+    AuthorID  string    `goninja:"list,retrieve,create,update,filter" validate:"required,uuid4"`
     Price     float64   `goninja:"list,retrieve,create,update,filter" validate:"min=0"`
     Published bool      `goninja:"list,retrieve,create,update,filter"`
+    CreatedAt time.Time `goninja:"list,retrieve"`
+    Author    Author    `goninja:"retrieve"`
 }
 ```
-
-<p align="center">
-<code>🔴&nbsp;🟡&nbsp;🟢&nbsp;&nbsp;<b>zsh</b></code>
 
 ```console
 $ go install github.com/caspel26/goninja/cmd/goninja@latest
-$ goninja generate
-  ✓ parsed models (3 found)
-  ✓ wrote internal/api/book_generated.go
-  ✓ wrote internal/api/author_generated.go
+$ goninja generate -models-import myapp/models
 ```
-</p>
 
-That writes typed schemas, handlers, database queries, and an OpenAPI
-fragment for the model — plain Go under `internal/api`, readable and
-debuggable, nothing reflected at runtime. Wiring it into a server is a few
-lines, no framework of its own to learn:
+That writes typed schemas, handlers, queries and an OpenAPI fragment as plain
+Go under `internal/api` — readable, debuggable, nothing reflected at request
+time. Wiring it into a server takes a few lines:
 
 ```go
 // main.go
-package main
+mux := http.NewServeMux()
+app := goninja.NewAPI("Bookstore API", "0.1.0")
 
-import (
-    "net/http"
-
-    "gorm.io/driver/postgres"
-    "gorm.io/gorm"
-
-    "github.com/caspel26/goninja"
-    "github.com/caspel26/goninja/docsui"
-    "myapp/internal/api"
-    "myapp/models"
+app.Mount(mux,
+    api.NewAuthorResource(db),
+    api.NewBookResource(db),
 )
+app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 
-func main() {
-    db, _ := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-    db.AutoMigrate(&models.Author{}, &models.Book{}) // goninja doesn't generate migrations
-
-    mux := http.NewServeMux()
-    app := goninja.NewAPI("Bookstore API", "0.1.0")
-
-    app.Mount(mux,
-        api.NewAuthorResource(db),
-        api.NewBookResource(db),
-    )
-    app.MountDocs(mux, "/docs", docsui.SwaggerUI())
-
-    http.ListenAndServe(":8080", mux)
-}
+http.ListenAndServe(":8080", mux)
 ```
 
-That's a full `net/http` server: `GET/POST /books`, `GET/PUT/DELETE
-/books/{id}`, filtering, pagination, validation, and `/docs` — all from the
-struct at the top. See the
-[Getting Started guide](https://caspel26.github.io/goninja/docs/getting-started/)
-for the full walkthrough, including `-watch` mode.
+You now have `GET/POST /books`, `GET/PUT/DELETE /books/{id}`, the same for
+`/authors`, and Swagger UI at `/docs` — with filtering, ordering, pagination
+and validation included:
 
-> **Status: pre-alpha.** The API above is the design target. What exists
-> today is an early prototype — see [Status](#status).
+```console
+$ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20"
+{"items":[{"id":"0f3d…","title":"The Go Programming Language","price":34.99}],
+ "total":128,"limit":20,"offset":0}
+```
+
+> [!WARNING]
+> **Pre-alpha.** Everything documented is implemented and tested, but the API
+> may change without notice and there is no compatibility guarantee yet.
 
 ---
 
 ## Why goninja
 
-- **Code-first**: the struct is the single source of truth. No separate
-  schema files, no config YAML.
-- **Generated, not reflected**: `goninja generate` writes real `.go`
-  files you commit. Errors show up at compile time, not in production.
-- **Plain `net/http`**: no framework lock-in for routing.
-- **Safe by default**: output schemas are always separate from your
-  database model, so a sensitive field can't leak into a response just
-  because it exists on the struct.
-- **Built to be extended**: override any generated method, hook into
-  create/update/delete, plug in your own auth middleware — all without
-  touching generated files. See
-  [Extending a Resource](https://caspel26.github.io/goninja/docs/extending/)
-  for hooks, custom actions, auth, and testing your own resources.
+|  | |
+|---|---|
+| **Code-first** | The struct is the single source of truth. No schema files, no YAML, no DSL. |
+| **Generated, not reflected** | Real `.go` files you commit. A bad tag fails the build, not production. |
+| **Plain `net/http`** | Routes mount on an `*http.ServeMux`. No custom router, no framework lock-in. |
+| **Safe by default** | Output types are separate structs from your model, so a field can't leak into a response just because it exists. |
+| **No N+1 by construction** | `list` never preloads; `retrieve` preloads what it carries. The code that would N+1 is never generated. |
+| **Built to be extended** | Hooks, per-method overrides, custom actions and auth — all without touching generated files. |
 
-How does this compare to Huma, gocrud, or gorest? See the
-[full comparison](https://caspel26.github.io/goninja/docs/comparison/) —
-short version: those resolve your model at request time via generics and
-reflection (or leave the handlers to you); goninja trades that runtime
-flexibility for handlers, queries, and OpenAPI fragments that exist as
-ordinary Go source before the binary is even built.
+How does this compare to [Huma](https://github.com/danielgtaylor/huma),
+[gocrud](https://github.com/ckoliber/gocrud) or
+[gorest](https://github.com/nicolasbonnici/gorest)? Those resolve your model at
+request time through generics and reflection, or leave the handlers to you.
+goninja trades that runtime flexibility for handlers, queries and OpenAPI
+fragments that exist as ordinary Go source before the binary is built —
+[full comparison](https://goninja.dev/docs/comparison/).
 
 ---
 
-## Status
+## Documentation
 
-`goninja` is early and not yet usable for real projects. The current
-engine lives under [`internal/codegen`](internal/codegen) and
-[`examples/prototype`](examples/prototype): it parses `goninja`-tagged
-struct fields and generates typed output types plus GORM-backed CRUD
-(`net/http` handlers, transaction-aware queries, automatic preloading of
-belongs-to and has-many relations on retrieve, `validate`-tag-driven input
-validation with per-field 422 responses, `filter`-tag-driven filtering with
-limit/offset pagination and ordering behind a `{items, total, limit,
-offset}` envelope) for any number of models, verified end to end against
-Postgres.
+Everything lives at **[goninja.dev](https://goninja.dev)**.
 
-Try it (needs a running Postgres):
+| | |
+|---|---|
+| [Getting Started](https://goninja.dev/docs/getting-started/) | From an empty module to a running API |
+| [How It Works](https://goninja.dev/docs/how-it-works/) | The generator pipeline, and what runs per request |
+| [Struct Tags](https://goninja.dev/docs/reference/tags/) | Every verb and modifier the `goninja` tag accepts |
+| [Filtering & Pagination](https://goninja.dev/docs/guides/querying/) | Filters, ranges, ordering, the list envelope |
+| [Validation](https://goninja.dev/docs/guides/validation/) · [Errors](https://goninja.dev/docs/guides/errors/) | Input rules, status codes, custom mapping |
+| [Relations](https://goninja.dev/docs/guides/relations/) · [Transactions](https://goninja.dev/docs/guides/transactions/) | Nesting vs. IDs, and the write path |
+| [Hooks & Overrides](https://goninja.dev/docs/guides/hooks-and-overrides/) · [Actions](https://goninja.dev/docs/guides/actions/) | Extending a resource |
+| [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
+| [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
+| [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
 
-<p align="center">
-<code>🔴&nbsp;🟡&nbsp;🟢&nbsp;&nbsp;<b>zsh</b></code>
+---
 
-```console
-$ export PROTOTYPE_DSN="host=localhost user=$(whoami) dbname=goninja_prototype sslmode=disable"
-$ make generate-prototype   # writes examples/prototype/internal/api
-$ make run-prototype        # serves /tasks, /authors, /books on :8080
-$ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit=20"
-$ open http://localhost:8080/docs   # Swagger UI over the merged OpenAPI doc
-```
-</p>
-
-Hooks, per-method overriding, custom path/route config, a global default
-auth policy + middleware, a per-field choice between nesting a relation and
-exposing just its ID, and end-to-end resource testing via `goninjatest` are
-all built — see the [docs](https://caspel26.github.io/goninja/docs/) for
-each. The runtime is the root `goninja` package (`BaseResource`, error
-types, hooks, auth, config, pagination, validation) plus four focused
-subpackages — `openapi` (standalone OpenAPI 3.0 types), `docsui` (pluggable
-docs UI, depends on `openapi`), `id` (UUID helper), and `goninjatest`
-(in-memory SQLite + httptest helpers for testing your own resources) — each
-with its own test suite (`make cover` for coverage across all of them plus
-`internal/codegen`, enforced at 70% in CI).
-
-### Generated docs UI
+## Generated docs UI
 
 One call — `app.MountDocs(mux, "/docs", ui)` — serves the merged OpenAPI
 document as JSON plus a rendered UI, both fully embedded (no external CDN).
-`ui` is an interface, not a hardcoded renderer, so swapping one line swaps
-the whole UI — `docsui.SwaggerUI()` (default) or `docsui.ReDoc()`:
+`ui` is an interface, so swapping one line swaps the whole UI:
 
 <table>
 <tr>
@@ -187,9 +158,10 @@ the whole UI — `docsui.SwaggerUI()` (default) or `docsui.ReDoc()`:
 </tr>
 </table>
 
-Every operation expands into its request/response schema, complete with
-example values generated straight from the model's fields — no hand-written
-OpenAPI, ever, including custom [actions](https://caspel26.github.io/goninja/docs/extending/actions/):
+Every operation expands into its full request/response schema, built from the
+same IR as the handlers — so the document can't drift from what the code
+actually does. Custom
+[actions](https://goninja.dev/docs/guides/actions/) are documented too:
 
 <p align="center">
 <img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books/{id}/publish operation, its id path parameter, and 200/404 responses" width="720">
@@ -199,24 +171,48 @@ OpenAPI, ever, including custom [actions](https://caspel26.github.io/goninja/doc
 
 ---
 
-## Documentation
+## Status
 
-The [full documentation site](https://caspel26.github.io/goninja/) covers:
+Pre-alpha, and not yet suitable for production. What works today, verified end
+to end against Postgres:
 
-- [Getting Started](https://caspel26.github.io/goninja/docs/getting-started/)
-- [Comparison](https://caspel26.github.io/goninja/docs/comparison/) vs Huma, gocrud, gorest
-- [CLI reference](https://caspel26.github.io/goninja/docs/cli/), including `-watch` mode
-- [Extending a resource](https://caspel26.github.io/goninja/docs/extending/): hooks and overrides,
-  custom validation tags, custom paths and restricted routes, custom
-  actions beyond CRUD, global auth and middleware, relations
-  (nested vs. by ID), and testing your own resources
+- CRUD generation for any number of models, with typed `List`/`Retrieve`/`Create`/`Update` types
+- Automatic preloading of belongs-to and has-many relations on retrieve, or bare IDs with `byid`
+- `validate`-tag-driven input validation with per-field 422 responses
+- `filter`-tag-driven filtering, limit/offset pagination, and ordering behind a `{items, total, limit, offset}` envelope
+- Hooks, per-method overrides, custom paths, restricted routes and custom actions
+- `Authenticator`-based auth reflected in the generated OpenAPI security schemes
+- OpenAPI 3.0 document generation with a pluggable, embedded docs UI
+- End-to-end resource testing via `goninjatest` (in-memory SQLite, no Postgres required)
+
+Try the in-repo example (needs a running Postgres):
+
+```console
+$ export PROTOTYPE_DSN="host=localhost user=$(whoami) dbname=goninja_prototype sslmode=disable"
+$ make generate-prototype   # writes examples/prototype/internal/api
+$ make run-prototype        # serves /tasks, /authors, /books on :8080
+$ open http://localhost:8080/docs
+```
+
+The runtime is the root `goninja` package plus four focused subpackages —
+`openapi` (standalone OpenAPI 3.0 types), `docsui` (pluggable docs UI), `id`
+(UUID helper) and `goninjatest` (test helpers) — each with its own test suite.
+Run `make cover` for coverage across all of them plus `internal/codegen`;
+CI enforces a 70% gate.
 
 ---
 
 ## Contributing
 
-The project is pre-alpha; the implementation plan is the source of truth
-for scope and sequencing. Open an issue before a large PR.
+Pre-alpha, so scope and sequencing move quickly — please open an issue before
+starting a large PR. `main` requires a pull request to merge.
+
+```console
+$ make build   # go build ./...
+$ make test    # go test ./...
+$ make vet     # go vet ./...
+$ make cover   # coverage, THRESHOLD=70 to gate
+```
 
 ## License
 

@@ -1,0 +1,27 @@
+{{/* Brand typography: Inter for UI, JetBrains Mono for code. */}}
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+  rel="stylesheet"
+/>
+
+{{/* Brand chrome colour for mobile browsers. */}}
+<meta name="theme-color" content="#61278e" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d0c14" media="(prefers-color-scheme: dark)" />
+
+{{/* Social preview: fall back to the full logo lockup. */}}
+{{- $og := resources.Get "images/goninja-logo-full.png" -}}
+{{- with $og }}
+  <meta property="og:image" content="{{ .Permalink }}" />
+  <meta property="og:image:width" content="{{ .Width }}" />
+  <meta property="og:image:height" content="{{ .Height }}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="{{ .Permalink }}" />
+{{- end }}
+<meta property="og:site_name" content="goninja" />
+<meta name="twitter:title" content="{{ if .IsHome }}goninja{{ else }}{{ .Title }} · goninja{{ end }}" />
+<meta
+  name="twitter:description"
+  content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}"
+/>

@@ -1,8 +1,7 @@
 ---
-title: Adding Custom Routes Beyond CRUD
-weight: 4
+title: Custom Actions
+weight: 9
 ---
-
 `Action` + `BaseResource.SetActions` is goninja's equivalent of
 django-ninja-aio-crud's `@action`: declare extra endpoints as data — a
 `Name`, whether it's `Detail` (mounted under `<base>/{id}/<UrlPath>`) or
