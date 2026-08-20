@@ -1,8 +1,7 @@
 ---
-title: Hooks and Overrides
-weight: 1
+title: Hooks & Overrides
+weight: 6
 ---
-
 ```go
 // handlers/author.go — your file, never touched by the generator.
 package handlers

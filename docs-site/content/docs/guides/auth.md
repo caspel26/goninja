@@ -1,8 +1,7 @@
 ---
-title: Global Auth and Middleware
-weight: 5
+title: Authentication
+weight: 10
 ---
-
 `api.MountWithConfig` is `api.Mount` plus a `Config`: a global default
 auth policy and generic middleware (logging, CORS, ...) applied to every
 resource passed to it.

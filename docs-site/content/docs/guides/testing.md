@@ -1,8 +1,7 @@
 ---
-title: Testing Your Own Resources
-weight: 7
+title: Testing
+weight: 11
 ---
-
 `goninjatest` (a separate module-level package, like `openapi`/`docsui`/`id`
 — only test code needs to import it) gets a resource from zero to a real
 HTTP request in a few lines: `NewDB` opens and `AutoMigrate`s an in-memory
