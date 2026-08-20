@@ -30,4 +30,5 @@ assumes you have already been through [Getting Started](../getting-started).
   {{< card link="hooks-and-overrides" title="Hooks & Overrides" icon="puzzle" subtitle="Run logic around an operation, or replace a generated method." >}}
   {{< card link="auth" title="Authentication" icon="lock-closed" subtitle="Authenticator objects, per-route policy and the built-in schemes." >}}
   {{< card link="testing" title="Testing" icon="beaker" subtitle="Drive a real resource over HTTP against in-memory SQLite." >}}
+  {{< card link="router-adapters" title="Router Adapters" icon="switch-horizontal" subtitle="Mount generated resources on gin, echo, or chi instead of net/http." >}}
 {{< /cards >}}

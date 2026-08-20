@@ -9,168 +9,142 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
 	"github.com/caspel26/goninja/openapi"
 	"gorm.io/gorm"
 
-	"github.com/caspel26/goninja/examples/prototype/models"
+	"github.com/caspel26/goninja/examples/echo/models"
 )
 
-// BookList is the shape returned by GET /books,
+// TaskList is the shape returned by GET /tasks,
 // one item per row of the "items" field of goninja.ListEnvelope.
-type BookList struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	AuthorID  string    `json:"author_id"`
-	Price     float64   `json:"price"`
-	Published bool      `json:"published"`
-	CreatedAt time.Time `json:"created_at"`
+type TaskList struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
 }
 
-// BookRetrieve is the shape returned by GET /books/{id}.
+// TaskRetrieve is the shape returned by GET /tasks/{id}.
 // A relation field (e.g. Author) is nested as that model's own Retrieve
 // type, never the raw related struct — output types are always separate
 // from the model, so a sensitive field can't leak into a response just
 // because it exists on the related struct either. A relation field tagged
 // "byid" (plan section 5.12) instead exposes only the related model's ID,
 // as "<field>_id" — no nesting, no Preload.
-type BookRetrieve struct {
-	ID        string         `json:"id"`
-	Title     string         `json:"title"`
-	AuthorID  string         `json:"author_id"`
-	Author    AuthorRetrieve `json:"author"`
-	Price     float64        `json:"price"`
-	Published bool           `json:"published"`
-	CreatedAt time.Time      `json:"created_at"`
+type TaskRetrieve struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
 }
 
-// BookCreate is the shape accepted by POST /books.
+// TaskCreate is the shape accepted by POST /tasks.
 // `validate` tags (go-playground/validator syntax) are copied verbatim from
 // the model field's own `validate` tag, and enforced by goninja.Validate
 // before Create runs.
-type BookCreate struct {
-	Title     string  `json:"title" validate:"required,max=200"`
-	AuthorID  string  `json:"author_id" validate:"required,uuid4"`
-	Price     float64 `json:"price" validate:"min=0"`
-	Published bool    `json:"published"`
+type TaskCreate struct {
+	Title string `json:"title" validate:"required,max=200"`
+	Done  bool   `json:"done"`
 }
 
-// BookUpdate is the shape accepted by PUT /books/{id}.
-type BookUpdate struct {
-	Title     string  `json:"title" validate:"required,max=200"`
-	AuthorID  string  `json:"author_id" validate:"required,uuid4"`
-	Price     float64 `json:"price" validate:"min=0"`
-	Published bool    `json:"published"`
+// TaskUpdate is the shape accepted by PUT /tasks/{id}.
+type TaskUpdate struct {
+	Title string `json:"title" validate:"required,max=200"`
+	Done  bool   `json:"done"`
 }
 
-// BookFilters is the shape parsed from GET /books
+// TaskFilters is the shape parsed from GET /tasks
 // query parameters (plan section 5.5/Fase 4): one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
 // ones, plus Limit/Offset/Order shared by every model's list query. A nil
 // field means "no filter" — List only adds a WHERE clause for the ones the
 // caller actually set.
-type BookFilters struct {
-	AuthorID  *string
-	Price     *float64
-	PriceMin  *float64
-	PriceMax  *float64
-	Published *bool
-	Limit     int
-	Offset    int
+type TaskFilters struct {
+	Done   *bool
+	Limit  int
+	Offset int
 	// Order is a list-field JSON name, optionally "-"-prefixed for
 	// descending (e.g. "-created_at"). Unknown field names are ignored.
 	Order string
 }
 
-// bookOrderableColumns whitelists which query values
+// taskOrderableColumns whitelists which query values
 // "order" accepts — every list field, keyed and valued by its JSON name
 // (assumed to match the actual DB column, per this model's `json` tags).
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
-var bookOrderableColumns = map[string]string{
-	"id":         "id",
-	"title":      "title",
-	"author_id":  "author_id",
-	"price":      "price",
-	"published":  "published",
-	"created_at": "created_at",
+var taskOrderableColumns = map[string]string{
+	"id":    "id",
+	"title": "title",
+	"done":  "done",
 }
 
-// bookInvalidIDMsg/bookIDQuery/
-// bookContentTypeJSON/bookNotFoundDesc/
-// bookRetrieveRef are shared across this file's
+// taskInvalidIDMsg/taskIDQuery/
+// taskContentTypeJSON/taskNotFoundDesc/
+// taskRetrieveRef are shared across this file's
 // handlers/resource methods (including OpenAPI() and its helpers below) to
 // avoid repeating the same literal per call site — package-level, prefixed
 // per model since several models can be generated into the same output
 // package.
 const (
-	bookInvalidIDMsg    = "invalid id"
-	bookIDQuery         = "id = ?"
-	bookContentTypeJSON = "application/json"
-	bookNotFoundDesc    = "Not found"
-	bookRetrieveRef     = "#/components/schemas/BookRetrieve"
+	taskInvalidIDMsg    = "invalid id"
+	taskIDQuery         = "id = ?"
+	taskContentTypeJSON = "application/json"
+	taskNotFoundDesc    = "Not found"
+	taskRetrieveRef     = "#/components/schemas/TaskRetrieve"
 )
 
-func toBookList(m *models.Book) BookList {
-	return BookList{
-		ID:        m.ID,
-		Title:     m.Title,
-		AuthorID:  m.AuthorID,
-		Price:     m.Price,
-		Published: m.Published,
-		CreatedAt: m.CreatedAt,
+func toTaskList(m *models.Task) TaskList {
+	return TaskList{
+		ID:    m.ID,
+		Title: m.Title,
+		Done:  m.Done,
 	}
 }
 
-func toBookRetrieve(m *models.Book) BookRetrieve {
-	return BookRetrieve{
-		ID:        m.ID,
-		Title:     m.Title,
-		AuthorID:  m.AuthorID,
-		Author:    toAuthorRetrieve(&m.Author),
-		Price:     m.Price,
-		Published: m.Published,
-		CreatedAt: m.CreatedAt,
+func toTaskRetrieve(m *models.Task) TaskRetrieve {
+	return TaskRetrieve{
+		ID:    m.ID,
+		Title: m.Title,
+		Done:  m.Done,
 	}
 }
 
-// BookResource is the generated GORM-backed CRUD resource for
-// Book. Embeds goninja.BaseResource for a transaction-aware
+// TaskResource is the generated GORM-backed CRUD resource for
+// Task. Embeds goninja.BaseResource for a transaction-aware
 // DB(ctx) and a configurable ErrorMapper.
-type BookResource struct {
+type TaskResource struct {
 	goninja.BaseResource
 }
 
-// NewBookResource builds a BookResource bound to db.
-func NewBookResource(db *gorm.DB) *BookResource {
-	r := &BookResource{}
+// NewTaskResource builds a TaskResource bound to db.
+func NewTaskResource(db *gorm.DB) *TaskResource {
+	r := &TaskResource{}
 	r.SetDB(db)
 	r.SetSelf(r)
 	return r
 }
 
-// BookOps is the method set the generated handlers dispatch
-// every request through. A type embedding BookResource and
+// TaskOps is the method set the generated handlers dispatch
+// every request through. A type embedding TaskResource and
 // overriding one of these methods (plan section 5.10) is picked up
 // automatically once wired in via SetSelf — see ops() below.
-type BookOps interface {
-	List(ctx context.Context, f BookFilters) ([]BookList, int64, error)
-	Retrieve(ctx context.Context, id string) (*BookRetrieve, error)
-	Create(ctx context.Context, in BookCreate) (*BookRetrieve, error)
-	Update(ctx context.Context, id string, in BookUpdate) (*BookRetrieve, error)
+type TaskOps interface {
+	List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error)
+	Retrieve(ctx context.Context, id string) (*TaskRetrieve, error)
+	Create(ctx context.Context, in TaskCreate) (*TaskRetrieve, error)
+	Update(ctx context.Context, id string, in TaskUpdate) (*TaskRetrieve, error)
 	Delete(ctx context.Context, id string) error
 }
 
-// ops returns the BookOps the generated handlers should call:
+// ops returns the TaskOps the generated handlers should call:
 // r.Self() if it satisfies the interface (a wrapper type overriding one or
 // more methods), otherwise r itself. r.Self() is r by default (set by
-// NewBookResource), so this is a no-op unless SetSelf was
+// NewTaskResource), so this is a no-op unless SetSelf was
 // called again with a different value.
-func (r *BookResource) ops() BookOps {
-	if o, ok := r.Self().(BookOps); ok {
+func (r *TaskResource) ops() TaskOps {
+	if o, ok := r.Self().(TaskOps); ok {
 		return o
 	}
 	return r
@@ -181,22 +155,10 @@ func (r *BookResource) ops() BookOps {
 // Preload, by construction, which is why list/retrieve are separate tags
 // (plan section 5.5): it's the guarantee against N+1, not an
 // implementation detail.
-func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int64, error) {
-	q := r.DB(ctx).Model(&models.Book{})
-	if f.AuthorID != nil {
-		q = q.Where("author_id = ?", *f.AuthorID)
-	}
-	if f.Price != nil {
-		q = q.Where("price = ?", *f.Price)
-	}
-	if f.PriceMin != nil {
-		q = q.Where("price >= ?", *f.PriceMin)
-	}
-	if f.PriceMax != nil {
-		q = q.Where("price <= ?", *f.PriceMax)
-	}
-	if f.Published != nil {
-		q = q.Where("published = ?", *f.Published)
+func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error) {
+	q := r.DB(ctx).Model(&models.Task{})
+	if f.Done != nil {
+		q = q.Where("done = ?", *f.Done)
 	}
 
 	var total int64
@@ -206,7 +168,7 @@ func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int
 
 	if f.Order != "" {
 		field, desc := strings.CutPrefix(f.Order, "-")
-		if col, ok := bookOrderableColumns[field]; ok {
+		if col, ok := taskOrderableColumns[field]; ok {
 			dir := "ASC"
 			if desc {
 				dir = "DESC"
@@ -215,13 +177,13 @@ func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int
 		}
 	}
 
-	var items []models.Book
+	var items []models.Task
 	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
-	out := make([]BookList, 0, len(items))
+	out := make([]TaskList, 0, len(items))
 	for i := range items {
-		out = append(out, toBookList(&items[i]))
+		out = append(out, toTaskList(&items[i]))
 	}
 	return out, total, nil
 }
@@ -230,30 +192,27 @@ func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int
 // list never does, by construction (see List above) — except one tagged
 // "byid" (plan section 5.12), which exposes only the related ID and so
 // skips the Preload entirely.
-func (r *BookResource) Retrieve(ctx context.Context, id string) (*BookRetrieve, error) {
+func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, error) {
 	q := r.DB(ctx)
-	q = q.Preload("Author")
 
-	var m models.Book
-	if err := q.First(&m, bookIDQuery, id).Error; err != nil {
+	var m models.Task
+	if err := q.First(&m, taskIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, goninja.NotFound{Resource: "book", ID: id}
+			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
 		return nil, err
 	}
-	out := toBookRetrieve(&m)
+	out := toTaskRetrieve(&m)
 	return &out, nil
 }
 
-func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve, error) {
+func (r *TaskResource) Create(ctx context.Context, in TaskCreate) (*TaskRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
-	m := models.Book{
-		Title:     in.Title,
-		AuthorID:  in.AuthorID,
-		Price:     in.Price,
-		Published: in.Published,
+	m := models.Task{
+		Title: in.Title,
+		Done:  in.Done,
 	}
 	if m.ID == "" {
 		m.ID = id.NewUUID()
@@ -264,81 +223,49 @@ func (r *BookResource) Create(ctx context.Context, in BookCreate) (*BookRetrieve
 	return r.Retrieve(ctx, m.ID)
 }
 
-func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*BookRetrieve, error) {
+func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*TaskRetrieve, error) {
 	if err := goninja.Validate(in); err != nil {
 		return nil, err
 	}
-	var m models.Book
-	if err := r.DB(ctx).First(&m, bookIDQuery, id).Error; err != nil {
+	var m models.Task
+	if err := r.DB(ctx).First(&m, taskIDQuery, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, goninja.NotFound{Resource: "book", ID: id}
+			return nil, goninja.NotFound{Resource: "task", ID: id}
 		}
 		return nil, err
 	}
 	m.Title = in.Title
-	m.AuthorID = in.AuthorID
-	m.Price = in.Price
-	m.Published = in.Published
+	m.Done = in.Done
 	if err := r.DB(ctx).Save(&m).Error; err != nil {
 		return nil, err
 	}
 	return r.Retrieve(ctx, id)
 }
 
-func (r *BookResource) Delete(ctx context.Context, id string) error {
-	res := r.DB(ctx).Where(bookIDQuery, id).Delete(&models.Book{})
+func (r *TaskResource) Delete(ctx context.Context, id string) error {
+	res := r.DB(ctx).Where(taskIDQuery, id).Delete(&models.Task{})
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return goninja.NotFound{Resource: "book", ID: id}
+		return goninja.NotFound{Resource: "task", ID: id}
 	}
 	return nil
 }
 
-// parseBookFilters reads BookFilters from the request's
+// parseTaskFilters reads TaskFilters from the request's
 // query parameters, keyed by each field's JSON name (plus "_min"/"_max" for
 // numeric range filters). A value that fails to parse is a BadRequest.
-func parseBookFilters(req *http.Request) (BookFilters, error) {
+func parseTaskFilters(req *http.Request) (TaskFilters, error) {
 	q := req.URL.Query()
-	var f BookFilters
+	var f TaskFilters
 
-	if v := q.Get("author_id"); v != "" {
-		parsed := v
-		f.AuthorID = &parsed
-	}
-
-	if v := q.Get("price"); v != "" {
-		n, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return f, goninja.BadRequest{Detail: "invalid price"}
-		}
-		parsed := float64(n)
-		f.Price = &parsed
-	}
-	if v := q.Get("price_min"); v != "" {
-		n, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return f, goninja.BadRequest{Detail: "invalid price_min"}
-		}
-		parsed := float64(n)
-		f.PriceMin = &parsed
-	}
-	if v := q.Get("price_max"); v != "" {
-		n, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return f, goninja.BadRequest{Detail: "invalid price_max"}
-		}
-		parsed := float64(n)
-		f.PriceMax = &parsed
-	}
-
-	if v := q.Get("published"); v != "" {
+	if v := q.Get("done"); v != "" {
 		parsed, err := strconv.ParseBool(v)
 		if err != nil {
-			return f, goninja.BadRequest{Detail: "invalid published"}
+			return f, goninja.BadRequest{Detail: "invalid done"}
 		}
-		f.Published = &parsed
+		f.Done = &parsed
 	}
 
 	limit, offset, err := goninja.ParseLimitOffset(q)
@@ -354,7 +281,7 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 	// response.
 	if order := q.Get("order"); order != "" {
 		field, _ := strings.CutPrefix(order, "-")
-		if _, ok := bookOrderableColumns[field]; !ok {
+		if _, ok := taskOrderableColumns[field]; !ok {
 			return f, goninja.BadRequest{
 				Detail: "cannot order by \"" + field + "\"",
 				Code:   "INVALID_ORDER_FIELD",
@@ -366,8 +293,8 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 	return f, nil
 }
 
-func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
-	f, err := parseBookFilters(req)
+func (r *TaskResource) listHandler(w http.ResponseWriter, req *http.Request) {
+	f, err := parseTaskFilters(req)
 	if err != nil {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
@@ -377,7 +304,7 @@ func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
 		goninja.Respond(w, r.ErrorMapper(), err)
 		return
 	}
-	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[BookList]{
+	goninja.RespondJSON(w, http.StatusOK, goninja.ListEnvelope[TaskList]{
 		Items:  items,
 		Total:  total,
 		Limit:  f.Limit,
@@ -385,10 +312,10 @@ func (r *BookResource) listHandler(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
+func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
@@ -404,15 +331,15 @@ func (r *BookResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 // Self() implements them, in the same transaction as the create itself —
 // a hook returning an error rolls the whole request back (plan section
 // 5.6/5.7).
-func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
-	var in BookCreate
+func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
+	var in TaskCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	self, ops := r.Self(), r.ops()
-	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*BookRetrieve, error) {
-		if h, ok := self.(goninja.BeforeCreateHook[BookCreate]); ok {
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*TaskRetrieve, error) {
+		if h, ok := self.(goninja.BeforeCreateHook[TaskCreate]); ok {
 			if err := h.BeforeCreate(ctx, &in); err != nil {
 				return nil, err
 			}
@@ -421,7 +348,7 @@ func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		if h, ok := self.(goninja.AfterCreateHook[BookRetrieve]); ok {
+		if h, ok := self.(goninja.AfterCreateHook[TaskRetrieve]); ok {
 			if err := h.AfterCreate(ctx, created); err != nil {
 				return nil, err
 			}
@@ -437,21 +364,21 @@ func (r *BookResource) createHandler(w http.ResponseWriter, req *http.Request) {
 
 // updateHandler runs BeforeUpdateHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the update itself.
-func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
+func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
-	var in BookUpdate
+	var in TaskUpdate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
 		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
 		return
 	}
 	self, ops := r.Self(), r.ops()
-	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*BookRetrieve, error) {
-		if h, ok := self.(goninja.BeforeUpdateHook[BookUpdate]); ok {
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*TaskRetrieve, error) {
+		if h, ok := self.(goninja.BeforeUpdateHook[TaskUpdate]); ok {
 			if err := h.BeforeUpdate(ctx, &in); err != nil {
 				return nil, err
 			}
@@ -467,10 +394,10 @@ func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 
 // deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the delete itself.
-func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
+func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
-		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
 		return
 	}
 
@@ -499,60 +426,49 @@ func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 // accept and return. Pass this resource to a goninja.API's Add method
 // (alongside its Register(mux) call) to merge it in, or just pass it to
 // API.Mount; see API.MountDocs.
-func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema, map[string]openapi.SecurityScheme) {
+func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema, map[string]openapi.SecurityScheme) {
 	tags := r.OpenAPITags()
 	if len(tags) == 0 {
-		tags = []string{"Book"}
+		tags = []string{"Task"}
 	}
 
 	schemas := map[string]openapi.Schema{
-		"BookList": {
+		"TaskList": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":         {Type: "string"},
-				"title":      {Type: "string"},
-				"author_id":  {Type: "string"},
-				"price":      {Type: "number", Format: "double"},
-				"published":  {Type: "boolean"},
-				"created_at": {Type: "string", Format: "date-time"},
+				"id":    {Type: "string"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
 			},
 		},
-		"BookRetrieve": {
+		"TaskRetrieve": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":         {Type: "string"},
-				"title":      {Type: "string"},
-				"author_id":  {Type: "string"},
-				"author":     {Ref: "#/components/schemas/AuthorRetrieve"},
-				"price":      {Type: "number", Format: "double"},
-				"published":  {Type: "boolean"},
-				"created_at": {Type: "string", Format: "date-time"},
+				"id":    {Type: "string"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
 			},
 		},
-		"BookCreate": {
+		"TaskCreate": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"title":     {Type: "string"},
-				"author_id": {Type: "string"},
-				"price":     {Type: "number", Format: "double"},
-				"published": {Type: "boolean"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
 			},
-			Required: []string{"title", "author_id"},
+			Required: []string{"title"},
 		},
-		"BookUpdate": {
+		"TaskUpdate": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"title":     {Type: "string"},
-				"author_id": {Type: "string"},
-				"price":     {Type: "number", Format: "double"},
-				"published": {Type: "boolean"},
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
 			},
-			Required: []string{"title", "author_id"},
+			Required: []string{"title"},
 		},
-		"BookListEnvelope": {
+		"TaskListEnvelope": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookList"}},
+				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/TaskList"}},
 				"total":  {Type: "integer", Format: "int64"},
 				"limit":  {Type: "integer"},
 				"offset": {Type: "integer"},
@@ -561,11 +477,7 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 	}
 
 	listParams := []openapi.Parameter{
-		{Name: "author_id", In: "query", Schema: openapi.Schema{Type: "string"}},
-		{Name: "price", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
-		{Name: "price_min", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
-		{Name: "price_max", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
-		{Name: "published", In: "query", Schema: openapi.Schema{Type: "boolean"}},
+		{Name: "done", In: "query", Schema: openapi.Schema{Type: "boolean"}},
 		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
 		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
 		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},
@@ -579,7 +491,7 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 	}
 
 	cfg := r.resourceConfig()
-	basePath := cfg.PathOr("/books")
+	basePath := cfg.PathOr("/tasks")
 	itemPath := basePath + "/{id}"
 
 	paths := map[string]*openapi.PathItem{}
@@ -600,7 +512,7 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 // and, if non-nil, merges its referenced SecurityScheme(s) into schemes —
 // shared by every op builder below so each documents exactly what
 // r.Protect enforces for that route.
-func (r *BookResource) openAPISecurity(route goninja.Route, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
+func (r *TaskResource) openAPISecurity(route goninja.Route, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
 	reqs, s := r.SecurityFor(route, cfg)
 	for name, scheme := range s {
 		schemes[name] = scheme
@@ -609,37 +521,37 @@ func (r *BookResource) openAPISecurity(route goninja.Route, cfg goninja.Resource
 }
 
 // openAPIBasePathItem builds the list/create *openapi.PathItem for
-// "books" (nil if neither route is enabled) — split out of
+// "tasks" (nil if neither route is enabled) — split out of
 // OpenAPI() to keep its cognitive complexity in check.
-func (r *BookResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
+func (r *TaskResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
 	item := &openapi.PathItem{}
 	if cfg.RouteEnabled(goninja.RouteList) {
 		item.Get = &openapi.Operation{
-			Summary:    "List books",
+			Summary:    "List tasks",
 			Tags:       tags,
 			Parameters: listParams,
 			Security:   r.openAPISecurity(goninja.RouteList, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookListEnvelope"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskListEnvelope"}},
 				}},
 			},
 		}
 	}
 	if cfg.RouteEnabled(goninja.RouteCreate) {
 		item.Post = &openapi.Operation{
-			Summary:  "Create a book",
+			Summary:  "Create a task",
 			Tags:     tags,
 			Security: r.openAPISecurity(goninja.RouteCreate, cfg, schemes),
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookCreate"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskCreate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"201": {Description: "Created", Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
 				"422": {Description: "Validation error"},
 			},
@@ -652,55 +564,55 @@ func (r *BookResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []st
 }
 
 // openAPIItemPathItem builds the retrieve/update/delete *openapi.PathItem
-// for "books/{id}" (nil if none of the three routes is
+// for "tasks/{id}" (nil if none of the three routes is
 // enabled) — split out of OpenAPI() to keep its cognitive complexity in
 // check.
-func (r *BookResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
+func (r *TaskResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
 	item := &openapi.PathItem{}
 	if cfg.RouteEnabled(goninja.RouteRetrieve) {
 		item.Get = &openapi.Operation{
-			Summary:    "Retrieve a book",
+			Summary:    "Retrieve a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Security:   r.openAPISecurity(goninja.RouteRetrieve, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
-				"404": {Description: bookNotFoundDesc},
+				"404": {Description: taskNotFoundDesc},
 			},
 		}
 	}
 	if cfg.RouteEnabled(goninja.RouteUpdate) {
 		item.Put = &openapi.Operation{
-			Summary:    "Update a book",
+			Summary:    "Update a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Security:   r.openAPISecurity(goninja.RouteUpdate, cfg, schemes),
 			RequestBody: &openapi.RequestBody{
 				Required: true,
 				Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/BookUpdate"}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/TaskUpdate"}},
 				},
 			},
 			Responses: map[string]openapi.Response{
 				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					bookContentTypeJSON: {Schema: openapi.Schema{Ref: bookRetrieveRef}},
+					taskContentTypeJSON: {Schema: openapi.Schema{Ref: taskRetrieveRef}},
 				}},
-				"404": {Description: bookNotFoundDesc},
+				"404": {Description: taskNotFoundDesc},
 				"422": {Description: "Validation error"},
 			},
 		}
 	}
 	if cfg.RouteEnabled(goninja.RouteDelete) {
 		item.Delete = &openapi.Operation{
-			Summary:    "Delete a book",
+			Summary:    "Delete a task",
 			Tags:       tags,
 			Parameters: []openapi.Parameter{idParam},
 			Security:   r.openAPISecurity(goninja.RouteDelete, cfg, schemes),
 			Responses: map[string]openapi.Response{
 				"204": {Description: "No content"},
-				"404": {Description: bookNotFoundDesc},
+				"404": {Description: taskNotFoundDesc},
 			},
 		}
 	}
@@ -714,7 +626,7 @@ func (r *BookResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []st
 // carries a Summary, mounted the same way Register mounts it (base or
 // "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
 // cognitive complexity in check.
-func (r *BookResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) {
+func (r *TaskResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) {
 	for _, a := range r.Actions() {
 		if a.Summary == "" {
 			continue
@@ -752,7 +664,7 @@ func (r *BookResource) openAPIActionPaths(paths map[string]*openapi.PathItem, ba
 // dispatch hooks.go and ops() use: a wrapper implementing
 // goninja.Configurer (plan section 5.3) customizes it, otherwise every
 // generated default applies.
-func (r *BookResource) resourceConfig() goninja.ResourceConfig {
+func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
 	if c, ok := r.Self().(goninja.Configurer); ok {
 		return c.Config()
 	}
@@ -760,7 +672,7 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
-// Book under /books on mux (any goninja.Router —
+// Task under /tasks on mux (any goninja.Router —
 // *http.ServeMux, or an adapter for gin/echo/chi), or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
@@ -770,9 +682,9 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 // via plain API.Mount has a zero Config, so Protect is a no-op there.
 // Every Action declared via SetActions is mounted last, on the same mux,
 // at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
-func (r *BookResource) Register(mux goninja.Router) {
+func (r *TaskResource) Register(mux goninja.Router) {
 	cfg := r.resourceConfig()
-	path := cfg.PathOr("/books")
+	path := cfg.PathOr("/tasks")
 	for _, rt := range [...]struct {
 		route   goninja.Route
 		method  string

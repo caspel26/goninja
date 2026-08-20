@@ -13,7 +13,35 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Router adapters for gin, echo, and chi** — `router` (new), `adapters/gin`, `adapters/echo`, `adapters/chi` (new modules)
+
+  `goninja.Resource.Register` now mounts on `goninja.Router`, a one-method
+  interface `*http.ServeMux` already satisfies — plain `net/http` usage is
+  unchanged. Each adapter translates a generated route's stdlib-style
+  pattern (`"GET /books/{id}"`) into its router's own syntax and binds the
+  matched path value back onto the request via `SetPathValue`, so a
+  generated handler's `req.PathValue("id")` call needs no changes at all —
+  only route registration is router-specific. Each adapter is its own Go
+  module (own `go.mod`), so gin/echo/chi are never a dependency of a plain
+  `net/http` project.
+
+- **Benchmark suite** — `examples/prototype/benchmark_test.go`
+
+  Three benchmarks (`go test -bench=.` via `make bench`) covering base
+  list serialization, filter-clause building, and the automatic-`Preload`
+  cost `Retrieve` pays on a relation field — the baseline for future
+  optimization work.
+
+### Changed
+
+- **`Resource.Register` takes `goninja.Router` instead of `*http.ServeMux`** — `api.go`, `docsui/docs.go`, `internal/codegen/templates/model.go.tmpl`
+
+  A breaking interface change for any hand-written `Resource` (not
+  generated ones, which pick this up automatically on regeneration) —
+  pre-alpha, no compatibility shim, same approach as the 0.2.0 auth
+  redesign.
 
 ## [0.2.0] - 2026-08-20
 

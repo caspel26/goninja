@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/caspel26/goninja/openapi"
+	"github.com/caspel26/goninja/router"
 )
 
 // DocsUI renders a documentation viewer for a mounted OpenAPI document.
@@ -54,7 +55,7 @@ type SpecSource interface {
 // "<path>/" is the page's actual base URL). ui selects the renderer —
 // pass SwaggerUI() or ReDoc() (both fully embedded, no external CDN) or
 // your own DocsUI; nil defaults to SwaggerUI().
-func MountDocs(mux *http.ServeMux, api SpecSource, path string, ui DocsUI) {
+func MountDocs(mux router.Router, api SpecSource, path string, ui DocsUI) {
 	if ui == nil {
 		ui = SwaggerUI()
 	}

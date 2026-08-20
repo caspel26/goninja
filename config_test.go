@@ -17,7 +17,7 @@ type fakeResource struct {
 func (f *fakeResource) SetConfig(cfg Config) { f.cfg = cfg }
 func (f *fakeResource) Config() Config       { return f.cfg }
 
-func (f *fakeResource) Register(mux *http.ServeMux) {
+func (f *fakeResource) Register(mux Router) {
 	f.registered = true
 	mux.HandleFunc("GET "+f.path, func(w http.ResponseWriter, r *http.Request) {})
 }

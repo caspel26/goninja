@@ -1,10 +1,16 @@
-.PHONY: build test vet fmt cover generate-prototype run-prototype docs docs-serve
+.PHONY: build test vet fmt cover bench generate-prototype run-prototype docs docs-serve
 
 build:
 	go build ./...
 
 test:
 	go test ./...
+
+# Runs the benchmark suite (examples/prototype/benchmark_test.go): base
+# serialization, filter-clause building, and automatic-Preload cost.
+# -run=^$ skips the package's regular tests during a bench invocation.
+bench:
+	go test ./examples/prototype/... -bench=. -benchmem -run=^$
 
 vet:
 	go vet ./...

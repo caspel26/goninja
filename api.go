@@ -1,24 +1,29 @@
 // API is goninja's application entry point: it accumulates every mounted
 // resource's OpenAPI fragment into one merged document and mounts
-// resources onto an *http.ServeMux. It owns that logic directly rather
-// than wrapping a separate document type — openapi just supplies the wire
+// resources onto a Router. It owns that logic directly rather than
+// wrapping a separate document type — openapi just supplies the wire
 // types (Schema, PathItem, Spec, ...) it's built from. Docs are an
 // optional layer on top (MountDocs), not the other way around.
 package goninja
 
 import (
-	"net/http"
-
 	"github.com/caspel26/goninja/docsui"
 	"github.com/caspel26/goninja/openapi"
+	"github.com/caspel26/goninja/router"
 )
 
+// Router is what a generated Register method mounts routes onto —
+// see the router package. *http.ServeMux satisfies it as-is; adapters for
+// gin, echo, and chi (github.com/caspel26/goninja/adapters/...) satisfy it
+// too, so the same generated code mounts on any of them unchanged.
+type Router = router.Router
+
 // Resource is what every generated <Model>Resource implements: it mounts
-// its routes on a mux and describes itself as an OpenAPI fragment. Mount
+// its routes on a Router and describes itself as an OpenAPI fragment. Mount
 // and MountWithConfig take a list of these so callers don't have to pair
 // up a Register(mux) call with an Add call by hand for every resource.
 type Resource interface {
-	Register(mux *http.ServeMux)
+	Register(mux Router)
 	openapi.OpenAPIProvider
 }
 
@@ -83,7 +88,7 @@ func (a *API) Spec() openapi.Spec {
 // BaseResource.ExcludeFromDocs() before passing it here to keep its routes
 // mounted but leave it out of the document; call its Register(mux)
 // directly instead of going through Mount to skip documenting it entirely.
-func (a *API) Mount(mux *http.ServeMux, resources ...Resource) {
+func (a *API) Mount(mux Router, resources ...Resource) {
 	for _, r := range resources {
 		r.Register(mux)
 		if x, ok := r.(interface{ DocsExcluded() bool }); ok && x.DocsExcluded() {
@@ -98,7 +103,7 @@ func (a *API) Mount(mux *http.ServeMux, resources ...Resource) {
 // Middleware take effect when each resource's generated Register builds
 // its handlers. Use it instead of Mount once the app has a global auth
 // policy or middleware to enforce.
-func (a *API) MountWithConfig(mux *http.ServeMux, cfg Config, resources ...Resource) {
+func (a *API) MountWithConfig(mux Router, cfg Config, resources ...Resource) {
 	for _, r := range resources {
 		if x, ok := r.(interface{ SetConfig(Config) }); ok {
 			x.SetConfig(cfg)
@@ -115,6 +120,6 @@ func (a *API) MountWithConfig(mux *http.ServeMux, cfg Config, resources ...Resou
 // path — see docsui.MountDocs, which this forwards to. ui selects the
 // renderer (docsui.SwaggerUI(), docsui.ReDoc(), or your own
 // docsui.DocsUI); nil defaults to Swagger UI.
-func (a *API) MountDocs(mux *http.ServeMux, path string, ui docsui.DocsUI) {
+func (a *API) MountDocs(mux Router, path string, ui docsui.DocsUI) {
 	docsui.MountDocs(mux, a, path, ui)
 }

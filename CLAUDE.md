@@ -203,11 +203,19 @@ make build               # go build ./...
 make test                # go test ./...
 make vet                 # go vet ./...
 make fmt                 # gofmt -l . (lists unformatted files)
-make cover               # coverage for . + internal/codegen + docsui/id/openapi/goninjatest; make cover THRESHOLD=70 to fail below it (CI does this)
+make cover               # coverage for . + internal/codegen + docsui/id/openapi/router/goninjatest; make cover THRESHOLD=70 to fail below it (CI does this)
 make cover-badge         # regenerate coverage-badge.json (README badge) from the last `make cover` run
+make bench               # go test ./examples/prototype/... -bench=. -benchmem -run=^$
 make generate-prototype  # regenerate examples/prototype/internal/api from examples/prototype/models
 make run-prototype       # generate-prototype, then run the example server on :8080 (needs PROTOTYPE_DSN, see below)
 ```
+
+`adapters/gin`, `adapters/echo`, and `adapters/chi` are each their own Go
+module (see Architecture below), so they're outside every `make`/`go
+...` command above — test them directly, e.g. `cd adapters/gin && go test
+./...`. The repo-root `go.work` wires them (plus `examples/gin`/`examples/
+echo`/`examples/chi`) together with the root module for local development;
+none of this is required for a consumer who only imports the root module.
 
 Run a single test: `go test ./internal/codegen/ -run TestParseModels -v`
 
@@ -236,7 +244,7 @@ It calls `db.AutoMigrate` itself on startup — no separate migration step.
 
 ## Architecture
 
-Three pieces:
+Four pieces:
 
 1. **`internal/codegen`** — the generator engine, used by anything that
    calls `goninja generate`:
@@ -335,6 +343,16 @@ Three pieces:
      else.
    - **`id`** (standalone): `NewUUID()`, used by `Create` when a model's ID
      field is a `string` (UUID primary key).
+   - **`router`** (standalone, no dependencies beyond `net/http`/
+     `strings`): `Router` (the one-method interface generated `Register`
+     methods and `API.Mount`/`MountWithConfig`/`MountDocs`/
+     `docsui.MountDocs` all take — `goninja.Router` is a root-package type
+     alias for it), `ParsePattern`/`Pattern`/`TranslatePath` (parse a
+     stdlib-style route pattern and rewrite its `{name}` wildcards into a
+     target router's own syntax), and `BindPathValues` (binds a router's
+     matched path params back onto `*http.Request` via `SetPathValue`, so
+     a generated handler's `req.PathValue("id")` call works under any
+     router). This is what every `adapters/*` module below is built on.
    - **`goninjatest`** (depends on root `goninja`, for the `Resource`
      interface `NewServer` takes): test-only helpers, not meant to be
      imported by production code — `NewDB(t, models...)` opens and
@@ -352,6 +370,21 @@ Three pieces:
    wrapper around `internal/codegen`, plus `-watch` (Phase 8, `watch.go`):
    an `fsnotify` watcher on `-models`, debounced 300ms, re-running the same
    parse+generate on every `.go` file change until Ctrl+C.
+
+4. **`adapters/gin`, `adapters/echo`, `adapters/chi`** — each its own Go
+   module (own `go.mod`, module path matching the directory, e.g.
+   `adapters/gin` → `.../adapters/gin`), not part of the root module, so
+   gin/echo/chi are never a dependency of a plain `net/http` project. Each
+   exports a package (`ginadapter`/`echoadapter`/`chiadapter` —
+   deliberately not matching the upstream router's own package name, e.g.
+   gin's is literally `gin`, so importing both needs no alias) with a
+   `New(r <that router's router/group type>) *Adapter` satisfying
+   `goninja.Router`, built entirely on the `router` package above. A
+   root-level `go.work` wires these (plus `examples/gin`/`examples/echo`/
+   `examples/chi`) together with the root module for local development;
+   each adapter's `go.mod` also carries a local `replace
+   github.com/caspel26/goninja => ../..` so it stays independently
+   buildable/testable outside the workspace too.
 
 **`examples/prototype`** exercises the whole loop end to end against real
 Postgres and is the concrete proof for the Phase 0-2 exit criteria:
@@ -729,3 +762,108 @@ coverage.sh`, `sonar-project.properties` — "thin flag-parsing wrapper",
 predating this addition) but got a real test suite anyway
 (`main_test.go`, `watch_test.go`) to match the rest of the repo's testing
 standard, not because the gate demanded it.
+
+**Post-v0.2.0: router adapters (gin, echo, chi) and a benchmark suite
+(2026-08-20).** Per the user's explicit next-release priority ("gin ecc"
+then benchmarks, ahead of anything else on the backlog), modeled on Huma's
+own router-adapter pattern (the user's explicit reference point) rather
+than a single hardcoded gin integration. New standalone package `router`
+(no dependencies beyond `net/http`/`strings`, same tier as `openapi`/`id`):
+`Router` (a one-method interface, `HandleFunc(pattern string, handler
+func(http.ResponseWriter, *http.Request))`, which `*http.ServeMux` already
+satisfies), `ParsePattern`/`Pattern` (parses a stdlib-style pattern like
+`"GET /books/{id}"` into method/path/params/wildcard/subtree),
+`TranslatePath` (rewrites `{name}` into `:name` for gin/echo, a no-op for
+chi's identical `{name}` syntax), and `BindPathValues` (copies a router's
+own matched params onto the request via `(*http.Request).SetPathValue`,
+Go 1.22+). This last piece is what let every other change stay minimal:
+since generated handlers already call `req.PathValue("id")` (a stdlib API,
+not tied to `*http.ServeMux` specifically), binding a value onto it before
+calling the handler makes the handler router-agnostic with zero code
+changes — only route *registration* is router-specific.
+`goninja.Resource.Register` (`api.go`) changed from `Register(mux
+*http.ServeMux)` to `Register(mux Router)` (`Router` a root-package type
+alias for `router.Router`), likewise `API.Mount`/`MountWithConfig`/
+`MountDocs` and `docsui.MountDocs` (`docsui/docs.go`, which gained a
+dependency on the new dependency-free `router` package — no cycle, since
+`router` imports nothing of goninja's). `internal/codegen/templates/
+model.go.tmpl`'s generated `Register` changed by exactly one line
+(`mux *http.ServeMux` → `mux goninja.Router`in the method signature) — the
+`mux.HandleFunc(...)` call sites for CRUD routes and `Actions()` are
+byte-identical, since `goninja.Router` is satisfied by whatever gets
+passed in. This is a real, if narrow, breaking change: any *hand-written*
+`Resource` (not generated ones, which pick it up on regeneration) no
+longer compiles until its `Register` signature is updated — accepted since
+goninja is pre-alpha with no released compatibility guarantee, the same
+reasoning already applied to the 0.2.0 auth redesign.
+
+Three adapters ship as separate nested Go modules — `adapters/gin`,
+`adapters/echo`, `adapters/chi`, each its own `go.mod` (module path
+matches the directory, e.g. `adapters/gin` → `github.com/caspel26/goninja/
+adapters/gin`, package `ginadapter`; the package name deliberately differs
+from both the directory and the upstream router's own package name — gin's
+own package is literally named `gin` — so a caller importing both in the
+same file never needs an alias) — rather than folded into the root module.
+This is the same "no import cost for non-users" reasoning that already
+justifies `openapi`/`docsui`/`id` as separate packages, taken one step
+further for packages with a real third-party dependency: adding gin,
+echo, and chi to root `go.mod` would pull all three into every consumer's
+module graph even for users who use none of them. Each adapter's `go.mod`
+requires the latest published root version (`v0.2.0`) plus a local
+`replace github.com/caspel26/goninja => ../..` for monorepo development;
+a root-level `go.work` (`use . ./adapters/gin ./adapters/echo
+./adapters/chi ./examples/gin ./examples/echo ./examples/chi`) wires
+everything together so `go build`/`go test` work from any of these
+directories during development without requiring a tagged release first —
+the `replace` directives keep each adapter module independently buildable
+even without the workspace (e.g. a bare `cd adapters/gin && go test ./...`
+still resolves locally). Each adapter's shape: `New(r <the router's own
+router/group type>) *Adapter` wraps it as a `goninja.Router`; `HandleFunc`
+calls `router.ParsePattern`, then `TranslatePath` to that router's syntax,
+registers on the underlying router (gin: `r.Handle`/`r.Any`; echo: `r.Add`/
+`r.Any`; chi: `r.MethodFunc`/`r.HandleFunc`), and its handler closure calls
+`router.BindPathValues` (gin: `c.Param`; echo: `c.Param`; chi:
+`chi.URLParam`) before invoking the generated handler unchanged. Fiber was
+deliberately left out of this pass: it's fasthttp-based, not `net/http`, so
+`*http.Request`/`ResponseWriter` don't apply at all — a real translation
+layer, not a thin adapter over the same `router` primitives — noted as a
+possible future phase on its own, not an oversight. Each adapter has its
+own `httptest`-driven test suite (CRUD + one detail action, a group/
+sub-router-mounted case, a `Protect`-wrapped 401 case, a `MountDocs`
+case), and `examples/prototype/router_contract_test.go` (root module,
+using a hand-written recording `Router`) pins the exact stdlib pattern
+strings a generated `Register` emits — the shared contract all three
+adapters translate from, checked once rather than per adapter. Verified
+against real routers, not just unit tests: `examples/gin`, `examples/echo`,
+`examples/chi` are three minimal but fully separate runnable modules (each
+its own single-model `Task` resource generated fresh, an in-memory SQLite
+DB via `glebarez/sqlite` directly rather than through `goninjatest` since
+`main` has no `*testing.T`) — each was run with `go run` and hit with
+`curl` for create/list/docs during this work, not just exercised via
+`httptest`. `.github/workflows/go.yml` gained a matrix `adapters` job
+(`gin`/`echo`/`chi`) since these are separate modules outside the main
+job's `go test ./...`; `scripts/coverage.sh` gained `./router` to its
+package list (100% covered).
+
+The benchmark suite (`examples/prototype/benchmark_test.go`, `make bench`
+in the Makefile) is unrelated to the router work beyond sharing this
+release: three `go test -bench` benchmarks — `BenchmarkTaskList` (base
+list serialization, no relations/filters), `BenchmarkBookListFiltered`
+(filter-clause building), `BenchmarkBookRetrievePreload` (the automatic-
+`Preload` cost `Retrieve` always pays on a relation field) — each seeding
+1,000 rows directly via `*gorm.DB` (so seeding time never pollutes the
+timed loop) then driving real HTTP requests against a `goninjatest`
+server. `goninjatest.NewDB`/`NewServer` already accept `testing.TB` (not
+`*testing.T` specifically), so both work unmodified from a `*testing.B` —
+no changes to `goninjatest` were needed. One real bug caught during this
+work: the first version didn't drain each response body before closing
+it, which prevents Go's HTTP transport from reusing the connection for
+keep-alive — every iteration opened a fresh TCP connection/ephemeral port
+instead of reusing one, exhausting the local port range within a few
+thousand iterations. Fixed with a `drainAndClose` helper
+(`io.Copy(io.Discard, resp.Body)` before `Close`). Lives under
+`examples/prototype/` specifically because `scripts/coverage.sh` already
+excludes that directory from the coverage gate ("exercised manually, not
+part of the coverage gate") and plain `go test` (no `-bench`) never
+executes a benchmark's body — so this needed no changes to the coverage
+script or its threshold.
