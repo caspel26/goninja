@@ -33,8 +33,9 @@ build plan, and rationale — lives in `goninja-implementation-plan.md`, a
 local working doc kept out of git (not on GitHub); read it before making
 architectural changes, since most decisions in this repo trace back to it.
 
-**Current phase: Phase 7 (testing and testability)**, per section 6 of the
-plan ("Fase 7"). Phases 0-6 are done and documented in the plan next to
+**Current phase: Phase 9 (docs and distribution)**, per section 6 of the
+plan ("Fase 9") — Phase 8 (watch mode) closed out 2026-08-20, see below.
+Phases 0-6 are done and documented in the plan next to
 their phase sections: the engine generalizes across models, CRUD
 works end-to-end on real Postgres with automatic `Preload` on relation
 fields, `validate`-tag-driven input validation, and a pluggable
@@ -219,6 +220,11 @@ go run ./cmd/goninja generate \
   -models-import <full import path of the models package>
 ```
 
+Pass `-watch` to keep it running and regenerate automatically whenever a
+`.go` file under `-models` changes (debounced 300ms, so a single save
+triggers one regeneration even across an editor's temp-file-then-rename
+pattern); Ctrl+C stops it. Phase 8 (plan section 6) — see `cmd/goninja/watch.go`.
+
 `examples/prototype` needs a running Postgres and `PROTOTYPE_DSN` set,
 e.g.:
 
@@ -343,7 +349,9 @@ Three pieces:
      ever imports it.
 
 3. **`cmd/goninja`** — the CLI (`goninja generate`), a thin flag-parsing
-   wrapper around `internal/codegen`.
+   wrapper around `internal/codegen`, plus `-watch` (Phase 8, `watch.go`):
+   an `fsnotify` watcher on `-models`, debounced 300ms, re-running the same
+   parse+generate on every `.go` file change until Ctrl+C.
 
 **`examples/prototype`** exercises the whole loop end to end against real
 Postgres and is the concrete proof for the Phase 0-2 exit criteria:
@@ -696,3 +704,28 @@ which every generated `Create`/`Update`'s `Validate` call recognizes the
 new tag with no per-resource wiring. 100% coverage
 (`validate_test.go`'s `TestRegisterValidation_CustomTagIsUsedByValidate`).
 README gained a "Custom validation tags" subsection documenting it.
+
+**Phase 8 — watch mode (2026-08-20).** `goninja generate -watch` (plan
+section 6, "Fase 8") — added `github.com/fsnotify/fsnotify` as a
+`cmd/goninja`-only dependency (no production runtime impact; a separate
+binary, not imported by generated code or root `goninja`).
+`cmd/goninja/main.go`'s `runGenerate` now runs the same initial
+parse+generate as before, then, if `-watch` is set, hands off to
+`watchAndRegenerate` (`cmd/goninja/watch.go`) instead of returning: an
+`fsnotify.Watcher` on `-models`, debounced 300ms via `time.AfterFunc` so a
+single editor save (often a temp-file-write-then-rename) triggers one
+regeneration, not several. `shouldRegenerate(event)` is the pure
+filter — only `.go` files, only `Write`/`Create`/`Rename` ops — pulled out
+specifically so it's unit-testable without a real filesystem watcher.
+Shutdown is `context`-based (`signal.NotifyContext` on `main`'s side, wired
+to Ctrl+C/SIGTERM) rather than a bare blocking loop, which is what makes
+the watch loop itself testable too:
+`cmd/goninja/watch_test.go`'s `TestWatchAndRegenerate_RegeneratesOnFileWrite`
+starts it against a real temp directory, writes a model file, and polls
+for the regenerated output changing, then cancels the context and asserts
+a clean `nil` return — an actual integration test, not a mocked one.
+`cmd/goninja` stays outside the enforced coverage gate (`scripts/
+coverage.sh`, `sonar-project.properties` — "thin flag-parsing wrapper",
+predating this addition) but got a real test suite anyway
+(`main_test.go`, `watch_test.go`) to match the rest of the repo's testing
+standard, not because the gate demanded it.

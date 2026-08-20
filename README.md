@@ -36,6 +36,9 @@ type Book struct {
 $ goninja generate
 ```
 
+Add `-watch` to keep it running and regenerate automatically on every model
+file save, instead of running it by hand after each change.
+
 This generates typed schemas, handlers, database queries, and an OpenAPI
 fragment for the model — plain Go under `internal/api`, readable and
 debuggable, nothing reflected at runtime. Wiring it into a server is a few
