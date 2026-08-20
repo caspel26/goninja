@@ -60,16 +60,26 @@ GET /books?order=-created_at
 Only fields tagged `list` are orderable. The generator builds a package-level whitelist map (e.g. `bookOrderableColumns`) from JSON field name to database column, and `List` looks up the requested field there before ever touching `.Order()`:
 
 ```go
-field, desc := strings.CutPrefix(f.Order, "-")
-if col, ok := bookOrderableColumns[field]; ok {
-    q = q.Order(col + " " + dir)
+field, _ := strings.CutPrefix(order, "-")
+if _, ok := bookOrderableColumns[field]; !ok {
+    return f, goninja.BadRequest{Detail: "cannot order by \"" + field + "\""}
 }
 ```
 
-An unknown or misspelled `order` value is silently ignored — no error, no 400. This is also what makes ordering safe against SQL injection: nothing outside the whitelist ever reaches the query builder, regardless of what the client sends.
+An unknown or misspelled `order` value is a **400**, raised while parsing the
+query string rather than ignored in the query:
+
+```json
+{ "code": "BAD_REQUEST", "error": "cannot order by \"titel\"" }
+```
+
+The whitelist is also what makes ordering safe against SQL injection: nothing
+outside it ever reaches the query builder, regardless of what the client sends.
 
 {{< callout type="info" >}}
-If a field isn't sorting the way you expect, check that it's tagged `list` in the model. Fields without that tag never enter the whitelist, so `order` requests referencing them are dropped without feedback.
+If a field isn't sorting the way you expect, check that it's tagged `list` in
+the model. Fields without that tag never enter the whitelist, so `order`
+requests referencing them are rejected.
 {{< /callout >}}
 
 ## Pagination

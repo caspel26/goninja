@@ -90,12 +90,20 @@ func (m Model) IDGoType() string {
 
 In practice the two supported ID types are `int64` and `string`.
 
-{{< callout type="warning" >}}
-If a model has no field named `ID`, `IDGoType()` silently falls back to
-`int64` and the generated code will not compile against that model. If the
-ID field's type is neither `int64` nor `string`, the generated code also
-will not compile, since the path value handed to `Retrieve`/`Update`/`Delete`
-is always a string.
+{{< callout type="info" >}}
+The generator rejects a model with no `goninja`-tagged field named `ID`, and
+one whose `ID` is neither `int64` nor `string`, naming the file and the model:
+
+```console
+$ goninja generate -models-import myapp/models
+goninja: codegen: models/book.go: Book: no goninja-tagged field named ID;
+  every model needs one, typed int64 or string, and it must carry a goninja
+  tag to be exposed (e.g. `goninja:"list,retrieve"`)
+```
+
+Every problem across every model is reported in one run, and nothing is
+written when validation fails — so a rejected model never leaves a
+half-generated package behind.
 {{< /callout >}}
 
 ## Complete example

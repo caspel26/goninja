@@ -46,6 +46,42 @@ imported by other modules.
 
 Commit the generated output. See [Generated Code](../generated-code) for why.
 
+## Validation
+
+Before writing anything, the generator checks that every model it found can
+actually be turned into working code. A model that cannot is rejected with a
+message naming the file and field, and **no files are written** — so a bad
+model never leaves a half-generated package behind.
+
+```console
+$ goninja generate -models-import myapp/models
+goninja: codegen: models/book.go: Book: no goninja-tagged field named ID; every
+  model needs one, typed int64 or string, and it must carry a goninja tag to be
+  exposed (e.g. `goninja:"list,retrieve"`)
+models/book.go: Book.Author: relation field is *Author; pointers are not
+  supported, use a struct value for a belongs-to or a plain slice for a has-many
+models/tag.go: Tag: ID is int, which the generator cannot use as a primary key;
+  use int64 for a serial key or string for a UUID
+$ echo $?
+1
+```
+
+Every problem across every model is reported in a single run, rather than one
+per attempt.
+
+| Rejected | Why |
+| --- | --- |
+| No `goninja`-tagged field named `ID` | `Retrieve`, `Update` and `Delete` are all typed on the primary key |
+| `ID` typed anything but `int64` or `string` | The path value is a string; `int64` is parsed with `strconv.ParseInt`, `string` is treated as a UUID |
+| A pointer relation field (`*Author`, `[]*Book`) | Only a struct value or a plain slice of one is supported |
+| `byid` on a field that is not a relation | The modifier only means something for a relation |
+| `filter` on a relation field | A relation is not a column; tag its foreign key field instead |
+
+This is the same guarantee the [tag reference](../tags/) describes from the
+model's side: a mistake in a struct tag surfaces at generation time, with a
+message about your model — not later as a compile error inside a
+`DO NOT EDIT` file.
+
 ## go:generate
 
 A `go:generate` directive lets `go generate ./...` regenerate without

@@ -12,7 +12,23 @@ Release notes with more context live at
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The generator now rejects models it cannot turn into working code**, instead
+  of emitting a file that fails to compile. It reports every problem across
+  every model in one run, names the file and field, and writes nothing when
+  validation fails. Rejected: a missing `goninja`-tagged `ID` field, an `ID`
+  typed anything but `int64` or `string`, a pointer relation field, `byid` on a
+  non-relation field, and `filter` on a relation field.
+- **An unknown `?order=` field is now a 400** rather than being silently
+  ignored. Previously a typo returned unordered results with a 200, which is
+  indistinguishable from a successful sort. The whitelist that makes ordering
+  injection-safe is unchanged.
+
+### Added
+
+- `codegen.Validate`, and `Model.SourceFile` so a rejection can point at the
+  file the struct was declared in.
 
 ## [0.1.0] - 2026-08-20
 
