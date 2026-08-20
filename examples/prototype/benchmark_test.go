@@ -37,6 +37,23 @@ func drainAndClose(resp *http.Response) {
 // versions.
 const seedRows = 1000
 
+// benchmarkGet performs one GET, failing the benchmark on a transport error
+// or non-200 status. The body is closed via defer, scoped to this call
+// rather than the whole benchmark loop, so it's still drained and released
+// before the next iteration - and closed even on the Fatalf path, unlike a
+// bare drainAndClose call after the status check.
+func benchmarkGet(b *testing.B, url string) {
+	b.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		b.Fatalf("Get: %v", err)
+	}
+	defer drainAndClose(resp)
+	if resp.StatusCode != http.StatusOK {
+		b.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
 func BenchmarkTaskList(b *testing.B) {
 	db := goninjatest.NewDB(b, &models.Task{})
 	for i := 0; i < seedRows; i++ {
@@ -48,14 +65,7 @@ func BenchmarkTaskList(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := http.Get(srv.URL + "/tasks")
-		if err != nil {
-			b.Fatalf("Get: %v", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			b.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-		}
-		drainAndClose(resp)
+		benchmarkGet(b, srv.URL+"/tasks")
 	}
 }
 
@@ -81,14 +91,7 @@ func BenchmarkBookListFiltered(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := http.Get(srv.URL + "/books?published=true&price_min=10&price_max=80")
-		if err != nil {
-			b.Fatalf("Get: %v", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			b.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-		}
-		drainAndClose(resp)
+		benchmarkGet(b, srv.URL+"/books?published=true&price_min=10&price_max=80")
 	}
 }
 
@@ -114,13 +117,6 @@ func BenchmarkBookRetrievePreload(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := http.Get(srv.URL + "/books/" + book.ID)
-		if err != nil {
-			b.Fatalf("Get: %v", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			b.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-		}
-		drainAndClose(resp)
+		benchmarkGet(b, srv.URL+"/books/"+book.ID)
 	}
 }

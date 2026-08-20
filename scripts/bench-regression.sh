@@ -83,6 +83,7 @@ while IFS=, read -r name _ _ _ _ delta _; do
   [[ "$name" == "geomean" ]] && continue
   case "$delta" in
   -*) continue ;; # smaller/faster is never a regression
+  *) ;;           # a "+" delta falls through to the threshold check below
   esac
   pct="${delta#+}"
   pct="${pct%\%}"
