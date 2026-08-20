@@ -23,35 +23,30 @@ import (
 	"github.com/google/uuid"
 )
 
-// drainAndClose fully reads resp's body before closing it — skipping this
-// prevents the underlying connection from being reused for keep-alive,
-// forcing a new TCP connection (and a new ephemeral port) per request,
-// which exhausts the local port range under a benchmark's iteration count.
-func drainAndClose(resp *http.Response) {
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-}
-
 // seedRows is the fixed row count every benchmark below seeds, so ns/op
 // and allocs/op are comparable across benchmarks and across goninja
 // versions.
 const seedRows = 1000
 
 // benchmarkGet performs one GET, failing the benchmark on a transport error
-// or non-200 status. The body is closed via defer, scoped to this call
-// rather than the whole benchmark loop, so it's still drained and released
-// before the next iteration - and closed even on the Fatalf path, unlike a
-// bare drainAndClose call after the status check.
+// or non-200 status. The body is drained before the deferred close -
+// skipping that prevents the underlying connection from being reused for
+// keep-alive, forcing a new TCP connection (and a new ephemeral port) per
+// request, which exhausts the local port range under a benchmark's
+// iteration count. The defer is scoped to this call rather than the whole
+// benchmark loop, so the connection is still released before the next
+// iteration - and closed even on the Fatalf path.
 func benchmarkGet(b *testing.B, url string) {
 	b.Helper()
 	resp, err := http.Get(url)
 	if err != nil {
 		b.Fatalf("Get: %v", err)
 	}
-	defer drainAndClose(resp)
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
 func BenchmarkTaskList(b *testing.B) {
