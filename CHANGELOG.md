@@ -7,42 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 While goninja is pre-1.0, a minor version bump may include breaking changes.
 
-Release notes with more context live at
-[goninja.dev/docs/changelog](https://goninja.dev/docs/changelog/).
+Each entry names the package or file it touches and explains why the change
+was made, not just what changed. Release notes with more context and worked
+examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog/).
 
 ## [Unreleased]
 
-### Changed
+Nothing yet.
 
-- **The generator now rejects models it cannot turn into working code**, instead
-  of emitting a file that fails to compile. It reports every problem across
-  every model in one run, names the file and field, and writes nothing when
-  validation fails. Rejected: a missing `goninja`-tagged `ID` field, an `ID`
-  typed anything but `int64` or `string`, a pointer relation field, `byid` on a
-  non-relation field, and `filter` on a relation field.
-- **An unknown `?order=` field is now a 400** rather than being silently
-  ignored. Previously a typo returned unordered results with a 200, which is
-  indistinguishable from a successful sort. The whitelist that makes ordering
-  injection-safe is unchanged.
+## [0.2.0] - 2026-08-20
 
 ### Added
 
-- `codegen.Validate`, and `Model.SourceFile` so a rejection can point at the
-  file the struct was declared in.
-- **`goninja.Unauthorized`**, a new framework error type mapped to 401 by
-  `DefaultErrorMapper`. Every configured `Authenticator` declining a request
-  now returns a proper JSON body (`{"code":"UNAUTHORIZED","error":"unauthorized"}`)
-  through the same `Respond` path as every other error, instead of the plain
-  `http.Error` text response it returned before.
-- **An optional `Code` field on every framework error type**
-  (`NotFound`, `ValidationError`, `BadRequest`, `Unauthorized`). Left unset,
-  each type keeps its existing default JSON `"code"` (`NOT_FOUND`,
-  `VALIDATION_FAILED`, `BAD_REQUEST`, `UNAUTHORIZED`); setting it lets a
+- **`goninja.CodedError` and an optional `Code` field** — `errors.go`, `mapper.go`
+
+  `NotFound`, `ValidationError`, `BadRequest`, and the new `Unauthorized`
+  (below) implement `CodedError` (`error` plus `ErrorCode() string`). Left
+  unset, each type keeps its existing default JSON `"code"` (`NOT_FOUND`,
+  `VALIDATION_FAILED`, `BAD_REQUEST`, `UNAUTHORIZED`); setting `Code` lets a
   specific failure carry a more precise machine-readable identifier than the
-  HTTP status alone provides, e.g. the unknown-`?order=`-field 400 above now
-  sets `Code: "INVALID_ORDER_FIELD"`. All four types implement the new
-  `goninja.CodedError` interface (`error` plus `ErrorCode() string`), which
-  is what `DefaultErrorMapper` calls to resolve the body's `"code"` field.
+  HTTP status alone provides — the unrecognized-`?order=`-field 400 below
+  sets `Code: "INVALID_ORDER_FIELD"`.
+
+- **`goninja.Unauthorized`** — `errors.go`, `resource.go`
+
+  A new framework error type mapped to 401 by `DefaultErrorMapper`. Every
+  configured `Authenticator` declining a request now returns a JSON body
+  (`{"code":"UNAUTHORIZED","error":"unauthorized"}`) through the same
+  `Respond` path as every other error, instead of the plain-text
+  `http.Error` response it returned before.
+
+- **`codegen.Validate`, `Model.SourceFile`** — `internal/codegen/validate.go`, `internal/codegen/ir.go`
+
+  Lets a rejected model's error message point at the file the struct was
+  declared in, alongside the change below.
+
+### Changed
+
+- **The generator rejects models it cannot turn into working code** — `internal/codegen/validate.go`, `internal/codegen/generate.go`
+
+  Previously a bad model — no field named `ID`, an `ID` typed something
+  other than `int64`/`string`, a pointer relation field, `byid` on a
+  non-relation field, `filter` on a relation field — produced generated code
+  that failed to compile, with nothing pointing back at the actual model
+  that caused it. `Validate` now runs before any file is written, reports
+  every problem across every model in one pass, and writes nothing at all
+  when validation fails.
+
+- **An unrecognized `?order=` field is now a 400** — `internal/codegen/templates/model.go.tmpl`
+
+  Previously fell through silently and returned the default order with a
+  200 — a response indistinguishable from a correctly sorted one. The
+  column whitelist that makes ordering injection-safe is unchanged.
 
 ## [0.1.0] - 2026-08-20
 
@@ -50,50 +66,91 @@ First pre-alpha release.
 
 ### Added
 
-- **Code generation.** `goninja generate` reads a directory of annotated
-  structs and writes one `<model>_generated.go` per model — separate
-  `List`/`Retrieve`/`Create`/`Update` output types, HTTP handlers, GORM
-  queries and an OpenAPI fragment, formatted with `go/format`.
-- **Struct tag vocabulary.** Field-level `goninja:"..."` accepting `list`,
-  `retrieve`, `create`, `update` and `filter`, plus the relation-only
-  modifier `byid`.
-- **Watch mode.** `goninja generate -watch` regenerates on any `.go` change
-  under the models directory, debounced 300ms.
-- **Relations without N+1.** `list` never preloads; `retrieve` preloads every
-  relation field it carries. Belongs-to and has-many are both supported;
-  `byid` exposes a related ID instead of nesting the full object.
-- **Filtering, ordering and pagination.** `filter`-tagged fields become
-  exact-match filters, with `_min`/`_max` range filters on numeric fields.
-  Limit/offset pagination behind a `ListEnvelope[T]`
-  (`{items, total, limit, offset}`), and `?order=-field` resolved against a
-  per-model column whitelist.
-- **Validation.** `validate` struct tags are copied onto `Create`/`Update`
-  types only and checked before touching the database, returning a 422 keyed
-  by JSON field name. `RegisterValidation` adds custom tags.
-- **Error mapping.** `NotFound`, `ValidationError` and `BadRequest` map to
-  404/422/400 through a pluggable `ErrorMapper`; anything else becomes a
-  generic 500 that never leaks the underlying error.
-- **Transactions.** `create`, `update` and `delete` handlers run inside
-  `InTransaction`, so a failing hook rolls the whole operation back.
-- **Hooks and overrides.** `BeforeCreateHook`, `AfterCreateHook`,
-  `BeforeUpdateHook` and `BeforeDeleteHook`, method overrides via
-  `SetSelf`/`Self()`, and `ResourceConfig`/`Configurer` for custom mount
-  paths and restricted route sets.
-- **Custom routes.** `Action` plus `BaseResource.SetActions` mount non-CRUD
-  endpoints alongside the generated ones, documented in the same OpenAPI
-  fragment.
-- **Authentication.** `Authenticator` objects tried in order, with per-route
-  policy through `Config`/`AuthPolicy` and `API.MountWithConfig`. The
-  security schemes an authenticator describes are emitted into the generated
-  OpenAPI document, so enforcement and documentation cannot drift apart.
-  `HTTPBearer`, `HTTPBasic`, `APIKeyHeader` and `CookieKey` ship built in.
-- **OpenAPI and docs UI.** `NewAPI`/`Mount` merge every resource's fragment
-  into one document; `MountDocs` serves it as JSON alongside a rendered UI.
-  Swagger UI and ReDoc are both vendored and embedded — no external CDN —
-  behind the swappable `docsui.DocsUI` interface.
-- **Testing helpers.** `goninjatest.NewDB` and `goninjatest.NewServer` drive
-  a real generated resource over HTTP against in-memory SQLite, with no
-  Postgres required.
+- **Code generation** — `internal/codegen`, `internal/codegen/templates`
+
+  `goninja generate` reads a directory of annotated structs and writes one
+  `<model>_generated.go` per model — separate `List`/`Retrieve`/`Create`/
+  `Update` output types, HTTP handlers, GORM queries and an OpenAPI
+  fragment, formatted with `go/format`. The field-level tag vocabulary
+  (`list`, `retrieve`, `create`, `update`, `filter`, plus the relation-only
+  modifier `byid`) is a single struct tag, `ir.go`'s `Field.HasTag` the only
+  place that interprets it.
+
+- **Watch mode** — `cmd/goninja/watch.go`
+
+  `goninja generate -watch` regenerates on any `.go` change under the
+  models directory, debounced 300ms so one editor save produces one
+  regeneration rather than several.
+
+- **Relations without N+1** — `internal/codegen/templates/model.go.tmpl`
+
+  `list` never preloads; `retrieve` is the detail view and preloads every
+  relation field it carries — a guarantee of what the generator writes, not
+  a default that can silently drift. Belongs-to and has-many relations are
+  both supported; `byid` exposes a related ID instead of nesting the full
+  object.
+
+- **Filtering, ordering and pagination** — `pagination.go`, `internal/codegen/templates/model.go.tmpl`
+
+  `filter`-tagged fields become exact-match filters on a generated
+  `<Model>Filters` struct, with `_min`/`_max` range filters added for
+  numeric fields. List responses are wrapped in `ListEnvelope[T]`
+  (`{items, total, limit, offset}`), and `?order=-field` is resolved
+  against a per-model column whitelist — the same whitelist that makes
+  ordering injection-safe.
+
+- **Validation** — `validate.go`
+
+  `validate` struct tags are copied onto `Create`/`Update` types only —
+  never onto read paths — and checked before the database is touched,
+  returning a 422 keyed by JSON field name. `RegisterValidation` registers
+  custom tags at startup.
+
+- **Error mapping** — `errors.go`, `mapper.go`
+
+  `NotFound`, `ValidationError` and `BadRequest` map to 404/422/400 through
+  a pluggable `ErrorMapper`; anything else becomes a generic 500 that never
+  leaks the underlying error message.
+
+- **Transactions** — `resource.go`
+
+  `create`, `update` and `delete` handlers run inside `InTransaction`, so a
+  failing hook rolls the whole operation back — including `AfterCreate`
+  rolling back the row just inserted.
+
+- **Hooks and overrides** — `hooks.go`, `resource_config.go`, `resource.go`
+
+  `BeforeCreateHook`, `AfterCreateHook`, `BeforeUpdateHook` and
+  `BeforeDeleteHook`; method overrides via `SetSelf`/`Self()`; and
+  `ResourceConfig`/`Configurer` for custom mount paths and restricted route
+  sets.
+
+- **Custom routes** — `actions.go`
+
+  `Action` plus `BaseResource.SetActions` mount non-CRUD endpoints
+  alongside the generated ones, documented in the same OpenAPI fragment as
+  everything else on the resource.
+
+- **Authentication** — `auth.go`, `authenticators.go`, `config.go`
+
+  `Authenticator` objects tried in order, with per-route policy through
+  `Config`/`AuthPolicy` and `API.MountWithConfig`. The security scheme an
+  `Authenticator` describes is emitted into the generated OpenAPI document
+  by the same resolution used to enforce it, so what's documented and
+  what's enforced can't drift apart. `HTTPBearer`, `HTTPBasic`,
+  `APIKeyHeader` and `CookieKey` ship built in.
+
+- **OpenAPI and docs UI** — `api.go`, `openapi`, `docsui`
+
+  `NewAPI`/`Mount` merge every resource's fragment into one document, and
+  `MountDocs` serves it as JSON alongside a rendered UI. Swagger UI and
+  ReDoc are both vendored and embedded — no external CDN — behind the
+  swappable `docsui.DocsUI` interface.
+
+- **Testing helpers** — `goninjatest`
+
+  `goninjatest.NewDB` and `goninjatest.NewServer` drive a real generated
+  resource over HTTP against in-memory SQLite, with no Postgres required.
 
 ### Known limitations
 
@@ -103,8 +160,10 @@ First pre-alpha release.
   or `string` (treated as a UUID).
 - Relation fields must be a struct value or a slice of one — pointer
   relations are not supported.
-- An unknown `?order=` field is ignored rather than rejected.
+- An unknown `?order=` field is ignored rather than rejected (fixed in
+  [0.2.0]).
 - No OpenAPI example values are generated.
 
-[Unreleased]: https://github.com/caspel26/goninja/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/caspel26/goninja/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/caspel26/goninja/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/caspel26/goninja/releases/tag/v0.1.0
