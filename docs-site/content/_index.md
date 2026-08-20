@@ -24,12 +24,15 @@ description: Generate typed, validated REST APIs from annotated Go structs — n
 {{< /hextra/hero-subtitle >}}
 </div>
 
-<div class="hx:mb-6 hx:flex hx:gap-3 hx:flex-wrap">
+<div class="gn-hero-actions">
 {{< hextra/hero-button text="Get started" link="docs/getting-started" >}}
-{{< hextra/hero-button text="Browse examples" link="docs/examples" style="background:transparent;color:inherit;border:1px solid color-mix(in oklab, currentColor 25%, transparent);box-shadow:none" >}}
+<span class="gn-button-secondary">{{< hextra/hero-button text="Browse examples" link="docs/examples" >}}</span>
 </div>
 
-<div class="hx:mt-6"></div>
+<figure class="gn-demo">
+  <img src="/demo/vscode-demo.gif" width="1040" alt="Editor animation: a Book struct is annotated with goninja struct tags, goninja generate runs in the integrated terminal and reports the models it wrote, then a second tab appears containing the generated book_generated.go with its BookList output type." />
+  <figcaption>Tag the struct, run <code>goninja generate</code>, read the Go it wrote.</figcaption>
+</figure>
 
 {{< hextra/feature-grid cols="3" >}}
 
@@ -81,7 +84,12 @@ description: Generate typed, validated REST APIs from annotated Go structs — n
 Three steps. The middle one is a command; the other two are files you write.
 </div>
 
-**1 · Annotate a model**
+{{% steps %}}
+
+### Annotate a model
+
+Each `goninja` verb decides which operations expose that field. `validate` tags
+apply to input only, so `Price` can never be written negative.
 
 ```go {filename="models/book.go"}
 type Book struct {
@@ -95,17 +103,16 @@ type Book struct {
 }
 ```
 
-**2 · Generate**
+### Generate
+
+This writes one `<model>_generated.go` per model — output types, handlers,
+queries and an OpenAPI fragment. Add `-watch` to regenerate on save.
 
 ```shell
 goninja generate -models-import myapp/models
 ```
 
-<p align="center">
-  <img src="/demo/vscode-demo.gif" alt="Editor animation: a Book struct is annotated with goninja struct tags, then a second tab appears containing the generated book_generated.go with its BookList output type." width="820" />
-</p>
-
-**3 · Mount it**
+### Mount it
 
 ```go {filename="main.go"}
 mux := http.NewServeMux()
@@ -132,6 +139,8 @@ curl "localhost:8080/books?published=true&price_min=10&order=-created_at&limit=2
   "offset": 0
 }
 ```
+
+{{% /steps %}}
 
 <div class="hx:mt-14"></div>
 

@@ -20,6 +20,8 @@
   --gn-surface: #ffffff;
   --gn-surface-2: hsl(274 20% 98%);
   --gn-border: hsl(274 12% 90%);
+  --gn-border-strong: hsl(274 12% 74%);
+  --gn-text: hsl(274 14% 22%);
   --gn-code-bg: hsl(274 24% 97.5%);
   --gn-shadow: 0 1px 2px hsl(274 20% 20% / 0.04), 0 8px 24px -12px hsl(274 40% 20% / 0.12);
 
@@ -41,6 +43,8 @@
   --gn-surface: #0d0c14;
   --gn-surface-2: #14121d;
   --gn-border: hsl(274 18% 22%);
+  --gn-border-strong: hsl(274 18% 38%);
+  --gn-text: hsl(274 16% 88%);
   --gn-code-bg: hsl(274 22% 10%);
   --gn-shadow: 0 1px 2px hsl(274 40% 2% / 0.4), 0 8px 24px -12px hsl(274 60% 2% / 0.6);
 }
@@ -291,6 +295,28 @@ article.content,
    Cards / feature grid — modern, hover lift, gradient edge
    -------------------------------------------------------------------------- */
 
+/* The home layout wraps its content in `flex flex-col items-start`, which makes
+   every direct child shrink-to-fit. Blocks that should span the content width
+   have to claim it explicitly, or the cards grid collapses to one column. */
+.hextra-cards,
+.hextra-steps,
+.gn-demo {
+  width: 100%;
+}
+
+/* Step headings sit outside `.content` on the home layout, so they miss the
+   heading scale defined above and would otherwise render at body size. */
+.hextra-steps h3 {
+  font-size: 1.125rem;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  margin-top: 2rem;
+}
+
+.hextra-steps h3:first-child {
+  margin-top: 0.5rem;
+}
+
 .hextra-card {
   border-radius: 0.75rem !important;
   border: 1px solid var(--gn-border) !important;
@@ -357,6 +383,21 @@ p.not-prose[class*="text-xl"] {
   max-width: 46rem;
 }
 
+/* Hero CTA row. Both buttons render with identical utility classes, so the
+   secondary one is distinguished by a .gn-button-secondary wrapper rather than
+   an inline style attribute. */
+.gn-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin-block: 0 3.5rem;
+}
+
+.gn-hero-actions > span {
+  display: inline-flex;
+}
+
 /* Primary CTA — the pill-shaped hero button. */
 a.not-prose[class*="bg-primary-600"][class*="rounded-full"] {
   font-weight: 600;
@@ -374,6 +415,49 @@ a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
   transform: translateY(-1px);
   filter: brightness(1.08);
   box-shadow: 0 1px 2px hsl(274 60% 20% / 0.24), 0 12px 26px -10px hsl(274 70% 40% / 0.55);
+}
+
+/* Secondary CTA. The ring is an inset shadow rather than a border so this
+   button stays exactly the same height as the primary one, which has none. */
+.gn-button-secondary a.not-prose {
+  background: transparent !important;
+  background-image: none;
+  color: var(--gn-text) !important;
+  /* !important because the primary-CTA rule above is more specific and would
+     otherwise keep applying its purple drop shadow to this button. */
+  box-shadow: inset 0 0 0 1px var(--gn-border-strong) !important;
+}
+
+.gn-button-secondary a.not-prose:hover {
+  transform: translateY(-1px);
+  filter: none;
+  background: color-mix(in oklab, var(--gn-border) 30%, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--gn-border-strong) !important;
+}
+
+/* Hero demo animation. */
+.gn-demo {
+  margin: 0 0 4rem;
+  max-width: 65rem;
+}
+
+.gn-demo img {
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--gn-border);
+  box-shadow: var(--gn-shadow);
+}
+
+.gn-demo figcaption {
+  margin-top: 0.875rem;
+  font-size: 0.8438rem;
+  color: color-mix(in oklab, var(--gn-text) 62%, transparent);
+}
+
+.gn-demo figcaption code {
+  font-family: var(--gn-font-mono);
+  font-size: 0.8125rem;
 }
 
 /* --------------------------------------------------------------------------
