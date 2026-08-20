@@ -674,7 +674,8 @@ func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
 }
 
 // Register mounts list/retrieve/create/update/delete routes for
-// Author under /authors on mux, or under r's
+// Author under /authors on mux (any goninja.Router —
+// *http.ServeMux, or an adapter for gin/echo/chi), or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
 // set. Every handler is wrapped through r.Protect, which applies this
 // resource's Config (global default auth + generic middleware, set via
@@ -683,7 +684,7 @@ func (r *AuthorResource) resourceConfig() goninja.ResourceConfig {
 // via plain API.Mount has a zero Config, so Protect is a no-op there.
 // Every Action declared via SetActions is mounted last, on the same mux,
 // at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
-func (r *AuthorResource) Register(mux *http.ServeMux) {
+func (r *AuthorResource) Register(mux goninja.Router) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/authors")
 	for _, rt := range [...]struct {

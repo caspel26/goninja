@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/goninjatest"
 	"github.com/caspel26/goninja/openapi"
 )
@@ -13,7 +14,7 @@ type fakeResource struct {
 	path string
 }
 
-func (r *fakeResource) Register(mux *http.ServeMux) {
+func (r *fakeResource) Register(mux goninja.Router) {
 	mux.HandleFunc(r.path, func(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
