@@ -1,14 +1,9 @@
 name: docs
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docs-site/**"
-      - "scripts/build-docs.sh"
-      - ".github/workflows/docs.yml"
-  # A new release adds a version to the selector and moves what the site root
-  # serves, neither of which touches the paths above.
+  # Deploys only on a tagged release or by hand - not on every merge to main -
+  # so doc changes land on goninja.dev in step with a release, not the moment
+  # they're merged.
   release:
     types: [published]
   workflow_dispatch:
