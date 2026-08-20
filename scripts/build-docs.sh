@@ -28,6 +28,10 @@ BASE_URL="${BASE_URL:-https://goninja.dev}"
 BASE_URL="${BASE_URL%/}"
 OUT="${1:-$REPO_ROOT/public}"
 
+# Content paths, relative to the site's content/ directory, that are taken from
+# the working tree for every version instead of from that version's tag.
+UNVERSIONED=("docs/changelog")
+
 cd "$REPO_ROOT"
 
 command -v hugo >/dev/null || { echo "build-docs: hugo not found in PATH" >&2; exit 1; }
@@ -150,6 +154,16 @@ for i in "${!minors[@]}"; do  # non-empty: the no-release case returned above
     continue
   fi
   mv "$WORK/content" "$stage/content"
+
+  # Some pages describe the project across releases rather than a single one,
+  # so they always come from the working tree. A changelog frozen at its tag
+  # cannot mention anything released after it, and every version links to it.
+  for unversioned in "${UNVERSIONED[@]}"; do
+    [[ -e "$SITE_DIR/content/$unversioned" ]] || continue
+    rm -rf "$stage/content/$unversioned"
+    mkdir -p "$(dirname "$stage/content/$unversioned")"
+    cp -R "$SITE_DIR/content/$unversioned" "$stage/content/$unversioned"
+  done
 
   state="old"
   [[ "$minor" == "$latest_minor" ]] && state="latest"
