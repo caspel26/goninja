@@ -13,6 +13,8 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-20
+
 ### Changed
 
 - **`docsui.SpecSource` renamed to `docsui.SpecProvider`** — `docsui/docs.go`
@@ -21,6 +23,15 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
   in `-er`), matching the existing `openapi.OpenAPIProvider` precedent. A
   breaking rename for any caller referencing the type by name directly —
   pre-alpha, no compatibility shim.
+
+- **`adapters/{gin,echo,chi}` test suites excluded from the duplication metric** — `sonar-project.properties`
+
+  `adapter_test.go`/`docs_test.go` are intentionally near-identical across
+  the three adapter modules (the same httptest suite written once and
+  adapted per router, per each being a deliberately separate Go module
+  with no shared test dependency) — this was tripping the
+  `new_duplicated_lines_density` quality gate despite the actual adapter
+  implementation code having 0% duplication. No code changes.
 
 ## [0.3.0] - 2026-08-20
 
@@ -222,7 +233,8 @@ First pre-alpha release.
   [0.2.0]).
 - No OpenAPI example values are generated.
 
-[Unreleased]: https://github.com/caspel26/goninja/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/caspel26/goninja/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/caspel26/goninja/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/caspel26/goninja/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/caspel26/goninja/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/caspel26/goninja/releases/tag/v0.1.0
