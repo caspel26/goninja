@@ -47,3 +47,34 @@ jobs:
 
     - name: Coverage threshold
       run: ./scripts/coverage.sh 70
+
+  # adapters/{gin,echo,chi} are each their own Go module (see CLAUDE.md —
+  # kept out of the root module so gin/echo/chi are never a dependency cost
+  # for a plain net/http user), so they sit outside the build job's
+  # `go test ./...` entirely and need their own step.
+  adapters:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        adapter: [gin, echo, chi]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.25'
+
+    - name: Build
+      run: go build -v ./...
+      working-directory: adapters/${{ matrix.adapter }}
+
+    - name: Vet
+      run: go vet ./...
+      working-directory: adapters/${{ matrix.adapter }}
+
+    - name: Test
+      run: go test -v ./...
+      working-directory: adapters/${{ matrix.adapter }}
