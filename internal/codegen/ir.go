@@ -193,6 +193,10 @@ func (f Field) IsRequired() bool {
 type Model struct {
 	// Name is the Go type name, e.g. "Task".
 	Name string
+	// SourceFile is the path of the file the struct was declared in, used to
+	// point at the offending line when Validate rejects a model. Empty when
+	// a Model is built by hand rather than parsed.
+	SourceFile string
 	// Fields are the struct's goninja-annotated fields, in declaration order.
 	Fields []Field
 }

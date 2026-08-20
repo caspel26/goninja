@@ -345,7 +345,7 @@ func TestParseGenDeclModels_SkipsNonTypeSpec(t *testing.T) {
 		},
 	}
 
-	models, err := parseGenDeclModels(gen)
+	models, err := parseGenDeclModels("models.go", gen)
 	if err != nil {
 		t.Fatalf("parseGenDeclModels: %v", err)
 	}

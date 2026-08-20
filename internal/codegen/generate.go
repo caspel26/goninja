@@ -28,6 +28,11 @@ func Generate(models []Model, outDir, packageName, modelsImportPath, modelsPkg s
 	if len(models) == 0 {
 		return fmt.Errorf("codegen: no goninja-annotated models found")
 	}
+	// Reject unusable models before writing anything, so a bad model never
+	// leaves a half-generated package behind.
+	if err := Validate(models); err != nil {
+		return fmt.Errorf("codegen: %w", err)
+	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("codegen: creating %s: %w", outDir, err)
 	}

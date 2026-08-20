@@ -20,8 +20,8 @@ func ParseModels(dir string) ([]Model, error) {
 
 	var models []Model
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			fileModels, err := parseFileModels(file)
+		for path, file := range pkg.Files {
+			fileModels, err := parseFileModels(path, file)
 			if err != nil {
 				return nil, err
 			}
@@ -34,14 +34,14 @@ func ParseModels(dir string) ([]Model, error) {
 // parseFileModels extracts every tagged struct type declared directly in
 // file (split out of ParseModels to keep each loop level's nesting, and
 // therefore cognitive complexity, in check).
-func parseFileModels(file *ast.File) ([]Model, error) {
+func parseFileModels(path string, file *ast.File) ([]Model, error) {
 	var models []Model
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.TYPE {
 			continue
 		}
-		declModels, err := parseGenDeclModels(gen)
+		declModels, err := parseGenDeclModels(path, gen)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +52,7 @@ func parseFileModels(file *ast.File) ([]Model, error) {
 
 // parseGenDeclModels extracts every tagged struct type among gen's specs
 // (a `type (...)` block can declare more than one).
-func parseGenDeclModels(gen *ast.GenDecl) ([]Model, error) {
+func parseGenDeclModels(path string, gen *ast.GenDecl) ([]Model, error) {
 	var models []Model
 	for _, spec := range gen.Specs {
 		ts, ok := spec.(*ast.TypeSpec)
@@ -68,6 +68,7 @@ func parseGenDeclModels(gen *ast.GenDecl) ([]Model, error) {
 			return nil, fmt.Errorf("codegen: %s: %w", ts.Name.Name, err)
 		}
 		if hasTaggedField {
+			model.SourceFile = path
 			models = append(models, model)
 		}
 	}
