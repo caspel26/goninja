@@ -902,6 +902,19 @@ run UI without opening raw logs — a lighter-weight answer than a
 persistent trend dashboard (e.g. `github-action-benchmark` + gh-pages),
 which the user was offered and didn't choose.
 
+**Same-day follow-up: HTML benchmark report as a CI artifact.** The user
+asked for something more readable than the plain-text job summary — "cant
+it be a json? i wanted smth like an hmtl idk". Offered a choice between a
+CI-downloadable artifact, a nicer Markdown summary, or a published page;
+the user picked the CI artifact. `bench-regression.sh` now also writes a
+self-contained HTML file (`reports/bench-report.html`, gitignored — a
+generated-per-run artifact, not tracked) built from the same `benchstat`
+text output already computed for the job summary: a pass/fail badge, a
+list of exactly which benchmarks regressed (if any), and the full
+comparison table in a `<pre>` block, no external CSS/JS. `.github/
+workflows/bench.yml` uploads it via `actions/upload-artifact@v4` with
+`if: always()` so it's downloadable whether the check passed or failed.
+
 Regression gating alone didn't answer what the user actually asked next —
 which allocations/functions are worth optimizing, not just whether a
 change made things worse. `make bench-profile` (Makefile) runs the same

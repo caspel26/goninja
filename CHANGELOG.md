@@ -42,8 +42,10 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
   the difference is statistically significant (`benchstat`'s own `~`
   already filters out noise below that). The comparison table is also
   written to the GitHub Actions job summary, so a reviewer sees the actual
-  numbers, not just pass/fail. `make bench-baseline` moves the baseline
-  deliberately, after confirming a numbers change is expected.
+  numbers, not just pass/fail, and a self-contained HTML report
+  (`reports/bench-report.html`, gitignored) is uploaded as a CI artifact
+  for a more readable view than raw logs. `make bench-baseline` moves the
+  baseline deliberately, after confirming a numbers change is expected.
 
 - **`make bench-profile`** — `Makefile`
 

@@ -35,3 +35,12 @@ jobs:
       # external services needed.
       - name: Benchmark regression check
         run: make bench-check
+
+      # Uploaded even on failure (if: always()) so the HTML report is
+      # available to download and inspect regardless of the check's outcome.
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report
+          path: reports/bench-report.html
