@@ -9,10 +9,16 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Denied by default and granted per job, so a job never inherits more than it
+# needs from the repository's default token permissions.
+permissions: {}
+
 jobs:
 
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v4
 

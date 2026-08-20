@@ -13,10 +13,9 @@ on:
     types: [published]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Denied by default and granted per job below, so the build job never holds the
+# deploy job's write scopes.
+permissions: {}
 
 concurrency:
   group: pages
@@ -25,6 +24,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -39,7 +40,9 @@ jobs:
         with:
           hugo-version: "0.165.0"
           extended: true
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      # No configure-pages step: its only output is the Pages-provided base URL,
+      # which this site does not use because baseURL comes from the custom
+      # domain. Dropping it also keeps `pages` scopes out of this job.
       - name: Build all documented versions
         # Builds the working tree at the root and a frozen snapshot per release
         # tag at /vX.Y/ — one tree, one artifact. baseURL comes from the custom
@@ -57,6 +60,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
