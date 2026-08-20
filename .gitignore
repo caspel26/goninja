@@ -34,3 +34,8 @@ go.work.sum
 
 *plan.md
 HANDOFF.md
+
+# Hugo docs site build output
+docs-site/public/
+docs-site/resources/
+docs-site/.hugo_build.lock
