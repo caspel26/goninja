@@ -276,7 +276,20 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 	}
 	f.Limit = limit
 	f.Offset = offset
-	f.Order = q.Get("order")
+
+	// Reject an unknown order field here rather than ignoring it in List: a
+	// typo would otherwise return the default order with a 200, which reads
+	// as "sorted the way you asked" and is impossible to notice from the
+	// response.
+	if order := q.Get("order"); order != "" {
+		field, _ := strings.CutPrefix(order, "-")
+		if _, ok := authorOrderableColumns[field]; !ok {
+			return f, goninja.BadRequest{
+				Detail: "cannot order by \"" + field + "\"",
+			}
+		}
+		f.Order = order
+	}
 
 	return f, nil
 }
