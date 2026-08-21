@@ -13,6 +13,34 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Added
+
+- **`API.SetErrorMapper`, `Config.DefaultErrorMapper`, and `goninja.NewErrorMapper`/`NewErrorMapping`** — `api.go`, `config.go`, `mapper.go`
+
+  `API.SetErrorMapper(mappings ...ErrorMapping)` registers one or more
+  per-error-type handlers on the app object itself, applied by both
+  `Mount` and `MountWithConfig` to every resource that hasn't called its
+  own `SetErrorMapper` — the direct equivalent of FastAPI's
+  `@app.exception_handler(T)` or Django Ninja's `@api.exception_handler(T)`,
+  without requiring a `Config` built by hand just to reach
+  `MountWithConfig`. It takes `ErrorMapping`s rather than a whole
+  `ErrorMapper` so mappings from different files compose safely into one
+  list: a plain `ErrorMapper` has no way to say "I didn't recognize this
+  error, try the next one" (`DefaultErrorMapper` answers every error), so
+  chaining whole `ErrorMapper`s would let an earlier one silently swallow
+  everything after it — `ErrorMapping`'s own `Matches` avoids that.
+  `Config.DefaultErrorMapper` still exists for setting a whole
+  `ErrorMapper` explicitly on the `Config` passed to `MountWithConfig`
+  (wins over `API.SetErrorMapper` when both are set — a resource's own
+  `BaseResource.SetErrorMapper` still takes a whole `ErrorMapper` too, for
+  full control at that scope). `NewErrorMapper`/`NewErrorMapping[T]` build
+  an `ErrorMapping`/compose them into a plain `ErrorMapper`, matching via
+  `errors.As` like `DefaultErrorMapper` itself, instead of a hand-written
+  `MapError` switch. Resolution order per resource: its own
+  `SetErrorMapper` wins if set, else `Config.DefaultErrorMapper`
+  (explicit, or `API.SetErrorMapper`'s value), else the package
+  `DefaultErrorMapper`.
+
 ## [0.3.1] - 2026-08-20
 
 ### Changed

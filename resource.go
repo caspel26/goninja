@@ -54,13 +54,17 @@ func (r *BaseResource) SetErrorMapper(m ErrorMapper) {
 	r.errorMapper = m
 }
 
-// ErrorMapper returns the resource's configured ErrorMapper, or
-// DefaultErrorMapper if none was set via SetErrorMapper.
+// ErrorMapper returns the resource's configured ErrorMapper: its own, if
+// SetErrorMapper was called; else Config.DefaultErrorMapper, if set (see
+// SetConfig); else the package DefaultErrorMapper.
 func (r *BaseResource) ErrorMapper() ErrorMapper {
-	if r.errorMapper == nil {
-		return DefaultErrorMapper{}
+	if r.errorMapper != nil {
+		return r.errorMapper
 	}
-	return r.errorMapper
+	if r.config.DefaultErrorMapper != nil {
+		return r.config.DefaultErrorMapper
+	}
+	return DefaultErrorMapper{}
 }
 
 // SetOpenAPITags overrides the OpenAPI tags every operation this
@@ -116,10 +120,12 @@ func (r *BaseResource) Self() any {
 }
 
 // SetConfig injects the app-wide Config (global default auth, generic
-// middleware) this resource's generated Register(mux) uses to build its
-// handlers. Called by MountWithConfig (config.go); a resource mounted via
-// plain Mount never gets this called, so Config() stays at its zero value —
-// no global auth, no global middleware.
+// middleware, default error mapper) this resource's generated
+// Register(mux) uses to build its handlers. Called by MountWithConfig
+// always, and by Mount too when API.SetErrorMapper was used — otherwise a
+// resource mounted via plain Mount never gets this called, so Config()
+// stays at its zero value: no global auth, no global middleware, no
+// default error mapper.
 func (r *BaseResource) SetConfig(cfg Config) {
 	r.config = cfg
 }

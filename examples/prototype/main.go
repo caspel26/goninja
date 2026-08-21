@@ -49,12 +49,17 @@ func main() {
 
 	mux := http.NewServeMux()
 	app := goninja.NewAPI("goninja prototype", "0.1.0")
+	app.SetErrorMapper(appErrorMappings()...) // maps alreadyCompletedError app-wide; see errors.go
+
+	taskAPI := api.NewTaskResource(db)
+	taskAPI.SetActions(taskActions(taskAPI)...) // adds POST /tasks/{id}/complete; see taskcomplete.go
 
 	bookAPI := api.NewBookResource(db)
 	bookAPI.SetActions(bookActions(bookAPI)...) // adds POST /books/{id}/publish; see bookpublish.go
+	bookAPI.SetErrorMapper(bookErrorMapper())   // maps alreadyPublishedError to 409; see errors.go
 
 	resources := []goninja.Resource{
-		api.NewTaskResource(db),
+		taskAPI,
 		api.NewAuthorResource(db),
 		bookAPI,
 	}
@@ -77,6 +82,6 @@ func main() {
 	// docsui.ReDoc() is a drop-in alternative to docsui.SwaggerUI() here.
 	app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 
-	log.Println("prototype listening on :8080 (/tasks, /authors, /books — GET, POST, GET/{id}, PUT/{id}, DELETE/{id}, POST/{id}/publish; /docs for OpenAPI/Swagger UI)")
+	log.Println("prototype listening on :8080 (/tasks, /authors, /books — GET, POST, GET/{id}, PUT/{id}, DELETE/{id}, POST/{id}/complete on tasks, POST/{id}/publish on books; /docs for OpenAPI/Swagger UI)")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

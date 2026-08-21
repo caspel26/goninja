@@ -1,6 +1,7 @@
 package goninja
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -90,6 +91,70 @@ func TestAPI_MountWithConfig_ExcludedFromDocs(t *testing.T) {
 	}
 	if _, ok := api.Spec().Paths["/fakes"]; ok {
 		t.Error("MountWithConfig added a DocsExcluded resource's fragment, want it skipped")
+	}
+}
+
+// markerMapping builds an ErrorMapping that matches every error (via
+// NewErrorMapping[error], since errors.As into a *error target always
+// succeeds) and reports status so tests can tell which mapping answered
+// without comparing ComposedErrorMapper values directly — it holds a
+// []ErrorMapping of funcs, which isn't comparable with ==.
+func markerMapping(status int) ErrorMapping {
+	return NewErrorMapping(func(err error) (int, any) { return status, nil })
+}
+
+func TestAPI_Mount_AppliesSetErrorMapper(t *testing.T) {
+	mux := http.NewServeMux()
+	api := NewAPI("Test API", "1.0.0")
+	api.SetErrorMapper(markerMapping(599))
+	r := &fakeResource{path: "/fakes"}
+
+	api.Mount(mux, r)
+
+	status, _ := r.Config().DefaultErrorMapper.MapError(errors.New("boom"))
+	if status != 599 {
+		t.Errorf("status = %d, want 599 (the mapping passed to API.SetErrorMapper)", status)
+	}
+}
+
+func TestAPI_Mount_NoConfigCallWithoutSetErrorMapper(t *testing.T) {
+	mux := http.NewServeMux()
+	api := NewAPI("Test API", "1.0.0")
+	r := &fakeResource{path: "/fakes", cfg: Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}}}
+
+	api.Mount(mux, r)
+
+	if got := r.Config(); len(got.DefaultAuth.Routes) == 0 {
+		t.Error("Mount overwrote the resource's existing Config even though API.SetErrorMapper was never called")
+	}
+}
+
+func TestAPI_MountWithConfig_FallsBackToAPIErrorMapper(t *testing.T) {
+	mux := http.NewServeMux()
+	api := NewAPI("Test API", "1.0.0")
+	api.SetErrorMapper(markerMapping(599))
+	r := &fakeResource{path: "/fakes"}
+
+	api.MountWithConfig(mux, Config{DefaultAuth: AuthPolicy{Routes: []Route{RouteCreate}}}, r)
+
+	status, _ := r.Config().DefaultErrorMapper.MapError(errors.New("boom"))
+	if status != 599 {
+		t.Errorf("status = %d, want 599 (the API's SetErrorMapper value)", status)
+	}
+}
+
+func TestAPI_MountWithConfig_ExplicitDefaultErrorMapperWins(t *testing.T) {
+	mux := http.NewServeMux()
+	api := NewAPI("Test API", "1.0.0")
+	api.SetErrorMapper(markerMapping(599))
+	explicit := NewErrorMapper(markerMapping(600))
+	r := &fakeResource{path: "/fakes"}
+
+	api.MountWithConfig(mux, Config{DefaultErrorMapper: explicit}, r)
+
+	status, _ := r.Config().DefaultErrorMapper.MapError(errors.New("boom"))
+	if status != 600 {
+		t.Errorf("status = %d, want 600 (the explicit cfg value)", status)
 	}
 }
 

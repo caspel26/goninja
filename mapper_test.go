@@ -3,6 +3,7 @@ package goninja
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,6 +55,71 @@ func TestDefaultErrorMapper_DoesNotLeakUnknownErrorMessage(t *testing.T) {
 	b, _ := json.Marshal(body)
 	if got := string(b); strings.Contains(got, "sensitive internal detail") {
 		t.Errorf("MapError body leaked the underlying error message: %s", got)
+	}
+}
+
+type customError struct{ msg string }
+
+func (e customError) Error() string { return e.msg }
+
+func TestNewErrorMapper_FirstMatchWins(t *testing.T) {
+	mapper := NewErrorMapper(
+		NewErrorMapping(func(err customError) (int, any) {
+			return http.StatusTeapot, map[string]string{"code": "CUSTOM", "error": err.msg}
+		}),
+		NewErrorMapping(func(err NotFound) (int, any) {
+			return http.StatusNotFound, map[string]string{"code": "SHOULD_NOT_MATCH_FIRST"}
+		}),
+	)
+
+	status, body := mapper.MapError(customError{msg: "boom"})
+	if status != http.StatusTeapot {
+		t.Errorf("status = %d, want %d", status, http.StatusTeapot)
+	}
+	if got := body.(map[string]string)["error"]; got != "boom" {
+		t.Errorf("body error = %q, want %q", got, "boom")
+	}
+}
+
+func TestNewErrorMapper_WrappedErrorStillMatches(t *testing.T) {
+	mapper := NewErrorMapper(NewErrorMapping(func(err NotFound) (int, any) {
+		return http.StatusNotFound, map[string]string{"code": "WRAPPED_MATCH"}
+	}))
+
+	wrapped := fmt.Errorf("lookup failed: %w", NotFound{Resource: "Book", ID: 1})
+	status, body := mapper.MapError(wrapped)
+	if status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", status, http.StatusNotFound)
+	}
+	if got := body.(map[string]string)["code"]; got != "WRAPPED_MATCH" {
+		t.Errorf("code = %q, want %q", got, "WRAPPED_MATCH")
+	}
+}
+
+func TestNewErrorMapper_FallsBackToDefaultErrorMapper(t *testing.T) {
+	mapper := NewErrorMapper(NewErrorMapping(func(err customError) (int, any) {
+		return http.StatusTeapot, nil
+	}))
+
+	status, _ := mapper.MapError(NotFound{Resource: "Book", ID: 1})
+	if status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d (DefaultErrorMapper fallback)", status, http.StatusNotFound)
+	}
+}
+
+func TestComposedErrorMapper_UsesExplicitFallback(t *testing.T) {
+	mapper := ComposedErrorMapper{
+		Fallback: NewErrorMapper(NewErrorMapping(func(err error) (int, any) {
+			return http.StatusTeapot, map[string]string{"code": "FALLBACK"}
+		})),
+	}
+
+	status, body := mapper.MapError(errors.New("anything"))
+	if status != http.StatusTeapot {
+		t.Errorf("status = %d, want %d", status, http.StatusTeapot)
+	}
+	if got := body.(map[string]string)["code"]; got != "FALLBACK" {
+		t.Errorf("code = %q, want %q", got, "FALLBACK")
 	}
 }
 

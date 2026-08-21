@@ -11,7 +11,10 @@
 package main
 
 import (
+	"errors"
 	"net/http"
+
+	"gorm.io/gorm"
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/examples/prototype/internal/api"
@@ -39,11 +42,28 @@ func bookActions(r *api.BookResource) []goninja.Action {
 
 // publishBookHandler flips a book's Published flag and returns the updated
 // row — reuses the generated Retrieve to build the response instead of
-// duplicating its Preload/error-mapping logic.
+// duplicating its Preload/error-mapping logic. Rejects a book that's
+// already published with alreadyPublishedError (errors.go), demonstrating
+// r.ErrorMapper() dispatching through a custom mapper built with
+// goninja.NewErrorMapper instead of just the framework's own error types.
 func publishBookHandler(r *api.BookResource) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		id := req.PathValue("id")
+
+		var book models.Book
+		if err := r.DB(ctx).First(&book, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				err = goninja.NotFound{Resource: "book", ID: id}
+			}
+			goninja.Respond(w, r.ErrorMapper(), err)
+			return
+		}
+		if book.Published {
+			goninja.Respond(w, r.ErrorMapper(), alreadyPublishedError{BookID: id})
+			return
+		}
+
 		if err := r.DB(ctx).Model(&models.Book{}).Where("id = ?", id).
 			Update("published", true).Error; err != nil {
 			goninja.Respond(w, r.ErrorMapper(), err)

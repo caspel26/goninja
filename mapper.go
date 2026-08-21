@@ -61,6 +61,62 @@ func (DefaultErrorMapper) MapError(err error) (int, any) {
 	}
 }
 
+// ErrorMapping associates a predicate over an error with how to map it —
+// built with NewErrorMapping[T] for a specific error type. Composed via
+// NewErrorMapper into an ErrorMapper that tries each Mapping in order,
+// mirroring FastAPI's @app.exception_handler(T)/Django Ninja's
+// @api.exception_handler(T), but declared as data instead of a decorator.
+type ErrorMapping struct {
+	Matches func(err error) bool
+	Map     func(err error) (status int, body any)
+}
+
+// NewErrorMapping returns an ErrorMapping that matches any error
+// satisfying errors.As into T (so a wrapped error still matches, same as
+// DefaultErrorMapper's own checks) and maps it via fn.
+func NewErrorMapping[T error](fn func(err T) (status int, body any)) ErrorMapping {
+	return ErrorMapping{
+		Matches: func(err error) bool {
+			var target T
+			return errors.As(err, &target)
+		},
+		Map: func(err error) (int, any) {
+			var target T
+			errors.As(err, &target)
+			return fn(target)
+		},
+	}
+}
+
+// ComposedErrorMapper tries each Mapping in order and returns the first
+// match; if none match, it falls back to Fallback (DefaultErrorMapper{}
+// if Fallback is nil). Build one with NewErrorMapper rather than directly.
+type ComposedErrorMapper struct {
+	Mappings []ErrorMapping
+	Fallback ErrorMapper
+}
+
+func (m ComposedErrorMapper) MapError(err error) (int, any) {
+	for _, mapping := range m.Mappings {
+		if mapping.Matches(err) {
+			return mapping.Map(err)
+		}
+	}
+	fallback := m.Fallback
+	if fallback == nil {
+		fallback = DefaultErrorMapper{}
+	}
+	return fallback.MapError(err)
+}
+
+// NewErrorMapper composes mappings into an ErrorMapper, tried in order —
+// the declarative equivalent of registering one exception handler per
+// error type, instead of writing a MapError switch by hand. Falls back to
+// DefaultErrorMapper for anything no mapping matches.
+func NewErrorMapper(mappings ...ErrorMapping) ErrorMapper {
+	return ComposedErrorMapper{Mappings: mappings}
+}
+
 // Respond maps err through mapper (DefaultErrorMapper if mapper is nil) and
 // writes the resulting status/body as JSON.
 func Respond(w http.ResponseWriter, mapper ErrorMapper, err error) {

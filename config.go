@@ -40,4 +40,12 @@ type Config struct {
 	// (logging, CORS, request IDs, ...) — it always runs, protected or
 	// public, and runs outside whatever Authenticator(s) DefaultAuth applies.
 	Middleware []func(http.Handler) http.Handler
+
+	// DefaultErrorMapper is the ErrorMapper used by any resource that
+	// hasn't called its own SetErrorMapper — set once here instead of
+	// repeating SetErrorMapper per resource. A resource's own
+	// SetErrorMapper still wins when set: per-resource beats this global
+	// default, and this global default beats the package DefaultErrorMapper
+	// when both are unset — see BaseResource.ErrorMapper.
+	DefaultErrorMapper ErrorMapper
 }
