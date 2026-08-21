@@ -20,10 +20,8 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
   `API.SetErrorMapper(mappings ...ErrorMapping)` registers one or more
   per-error-type handlers on the app object itself, applied by both
   `Mount` and `MountWithConfig` to every resource that hasn't called its
-  own `SetErrorMapper` — the direct equivalent of FastAPI's
-  `@app.exception_handler(T)` or Django Ninja's `@api.exception_handler(T)`,
-  without requiring a `Config` built by hand just to reach
-  `MountWithConfig`. It takes `ErrorMapping`s rather than a whole
+  own `SetErrorMapper`, without requiring a `Config` built by hand just to
+  reach `MountWithConfig`. It takes `ErrorMapping`s rather than a whole
   `ErrorMapper` so mappings from different files compose safely into one
   list: a plain `ErrorMapper` has no way to say "I didn't recognize this
   error, try the next one" (`DefaultErrorMapper` answers every error), so

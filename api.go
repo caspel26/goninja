@@ -58,10 +58,9 @@ func NewAPI(title, version string) *API {
 // SetErrorMapper sets an app-wide default ErrorMapper from one or more
 // ErrorMappings (build each with NewErrorMapping), applied by Mount and
 // MountWithConfig to every resource that hasn't set its own via
-// BaseResource.SetErrorMapper — the direct equivalent of registering an
-// exception handler on the app itself (FastAPI's
-// @app.exception_handler(T), Django Ninja's @api.exception_handler(T)),
-// rather than building a Config by hand just to reach MountWithConfig.
+// BaseResource.SetErrorMapper — one place to register per-error-type
+// handling for the whole app, rather than building a Config by hand just
+// to reach MountWithConfig.
 // Takes ErrorMappings rather than a whole ErrorMapper so mappings composed
 // from different files/resources merge into one list safely: a plain
 // ErrorMapper has no way to say "I didn't recognize this error, try the

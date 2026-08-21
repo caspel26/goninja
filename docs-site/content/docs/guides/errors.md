@@ -140,7 +140,7 @@ It sets `Content-Type: application/json`, writes the given status code, then JSO
 
 ## Declarative mappers with NewErrorMapper
 
-For the common case — special-case one or two of your own error types, fall back to the default for everything else — `goninja.NewErrorMapper`/`goninja.NewErrorMapping[T]` avoid writing a `MapError` switch by hand. It's the same idea as FastAPI's `@app.exception_handler(T)` or Django Ninja's `@api.exception_handler(T)`, just declared as data instead of a decorator:
+For the common case — special-case one or two of your own error types, fall back to the default for everything else — `goninja.NewErrorMapper`/`goninja.NewErrorMapping[T]` avoid writing a `MapError` switch by hand: one handler per error type, declared as data:
 
 ```go {filename="handlers/book.go"}
 type outOfStockError struct {
@@ -208,7 +208,7 @@ Every error that isn't `outOfStockError` falls through to `DefaultErrorMapper`'s
 
 ## One mapper for the whole app: API.SetErrorMapper
 
-`SetErrorMapper` is per resource — calling it on every `New<Model>Resource` you construct works, but repeats the same call everywhere once an app has more than a couple of resources. `API.SetErrorMapper` sets it once for the whole app — the direct equivalent of FastAPI's `@app.exception_handler(T)` or Django Ninja's `@api.exception_handler(T)`, registered on the app object itself. Reach for it for an error type that's genuinely cross-resource (a rate-limit error, a maintenance-mode error, anything not tied to one model's own domain logic) — `outOfStockError`/`bookErrorMapper` above is scoped to `Book` on purpose, since nothing else in the app ever returns it.
+`SetErrorMapper` is per resource — calling it on every `New<Model>Resource` you construct works, but repeats the same call everywhere once an app has more than a couple of resources. `API.SetErrorMapper` sets it once for the whole app, registered on the app object itself. Reach for it for an error type that's genuinely cross-resource (a rate-limit error, a maintenance-mode error, anything not tied to one model's own domain logic) — `outOfStockError`/`bookErrorMapper` above is scoped to `Book` on purpose, since nothing else in the app ever returns it.
 
 It takes `ErrorMapping`s directly — plural, one per error type you want to register — rather than a whole `ErrorMapper`: an `ErrorMapper` has no way to say "I didn't recognize this error, try the next one" (`DefaultErrorMapper` answers *every* error), so chaining whole `ErrorMapper`s together would let an earlier one silently swallow everything after it. `ErrorMapping`'s own `Matches` avoids that, so mappings from different files compose safely into one list:
 

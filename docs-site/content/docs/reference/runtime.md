@@ -48,8 +48,7 @@ there is. `MountWithConfig` calls `SetConfig` on every resource before
 registering it; a resource mounted with plain `Mount` has a zero `Config`, so
 route protection is a no-op. `SetErrorMapper` is the exception: it applies via
 both `Mount` and `MountWithConfig` — see [Errors & Responses](../../guides/errors)
-for its FastAPI/Django Ninja `exception_handler` equivalence and resolution
-order against `Config.DefaultErrorMapper`.
+for its resolution order against `Config.DefaultErrorMapper`.
 
 ## BaseResource
 
@@ -154,11 +153,9 @@ mapping:
 
 Matching uses `errors.As`, so wrapping with `%w` still maps correctly.
 `NewErrorMapper`/`NewErrorMapping[T]` compose per-error-type handlers
-declaratively (FastAPI's `@app.exception_handler(T)`/Django Ninja's
-`@api.exception_handler(T)`, as data instead of a decorator) instead of
-writing a `MapError` switch by hand — see also `Config.DefaultErrorMapper`
-below for setting one mapper app-wide. Full detail in
-[Errors & Responses](../../guides/errors).
+declaratively instead of writing a `MapError` switch by hand — see also
+`Config.DefaultErrorMapper` below for setting one mapper app-wide. Full
+detail in [Errors & Responses](../../guides/errors).
 
 ## Validation
 

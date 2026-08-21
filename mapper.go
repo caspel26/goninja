@@ -63,9 +63,9 @@ func (DefaultErrorMapper) MapError(err error) (int, any) {
 
 // ErrorMapping associates a predicate over an error with how to map it —
 // built with NewErrorMapping[T] for a specific error type. Composed via
-// NewErrorMapper into an ErrorMapper that tries each Mapping in order,
-// mirroring FastAPI's @app.exception_handler(T)/Django Ninja's
-// @api.exception_handler(T), but declared as data instead of a decorator.
+// NewErrorMapper into an ErrorMapper that tries each Mapping in order —
+// one handler per error type, declared as data instead of a hand-written
+// switch.
 type ErrorMapping struct {
 	Matches func(err error) bool
 	Map     func(err error) (status int, body any)

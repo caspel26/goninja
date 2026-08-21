@@ -1,13 +1,11 @@
 // errors.go — never touched by the generator. Demonstrates a declarative
-// custom error mapper built with goninja.NewErrorMapper/NewErrorMapping —
-// goninja's equivalent of FastAPI's @app.exception_handler(T)/Django
-// Ninja's @api.exception_handler(T) — at two different scopes:
-// bookErrorMapper is a whole ErrorMapper set on BookResource alone
-// (SetErrorMapper, main.go) since alreadyPublishedError only ever comes
-// from bookpublish.go; appErrorMappings is a []ErrorMapping (including
-// alreadyCompletedError from taskcomplete.go, a different resource's
-// error) passed to app.SetErrorMapper (main.go), set once app-wide
-// instead of being repeated per resource.
+// custom error mapper built with goninja.NewErrorMapper/NewErrorMapping,
+// at two different scopes: bookErrorMapper is a whole ErrorMapper set on
+// BookResource alone (SetErrorMapper, main.go) since alreadyPublishedError
+// only ever comes from bookpublish.go; appErrorMappings is a
+// []ErrorMapping (including alreadyCompletedError from taskcomplete.go, a
+// different resource's error) passed to app.SetErrorMapper (main.go), set
+// once app-wide instead of being repeated per resource.
 package main
 
 import (
