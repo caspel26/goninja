@@ -13,6 +13,8 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-21
+
 ### Added
 
 - **`API.SetErrorMapper`, `Config.DefaultErrorMapper`, and `goninja.NewErrorMapper`/`NewErrorMapping`** — `api.go`, `config.go`, `mapper.go`
@@ -260,7 +262,8 @@ First pre-alpha release.
   [0.2.0]).
 - No OpenAPI example values are generated.
 
-[Unreleased]: https://github.com/caspel26/goninja/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/caspel26/goninja/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/caspel26/goninja/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/caspel26/goninja/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/caspel26/goninja/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/caspel26/goninja/compare/v0.1.0...v0.2.0
