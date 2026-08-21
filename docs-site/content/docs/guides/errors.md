@@ -138,11 +138,41 @@ func RespondJSON(w http.ResponseWriter, status int, v any)
 
 It sets `Content-Type: application/json`, writes the given status code, then JSON-encodes `v`. Use it any time a custom action needs to return something other than the standard CRUD response shapes.
 
-## Custom error mappers
+## Declarative mappers with NewErrorMapper
 
-A resource can override its error mapping with `BaseResource.SetErrorMapper(m ErrorMapper)`. `BaseResource.ErrorMapper()` returns `DefaultErrorMapper{}` when nothing has been set, so an unconfigured resource behaves exactly like the default mapping above.
+For the common case — special-case one or two of your own error types, fall back to the default for everything else — `goninja.NewErrorMapper`/`goninja.NewErrorMapping[T]` avoid writing a `MapError` switch by hand: one handler per error type, declared as data:
 
-A realistic custom mapper wraps the default one and only special-cases an error type of your own:
+```go {filename="handlers/book.go"}
+type outOfStockError struct {
+	BookID string
+}
+
+func (e outOfStockError) Error() string {
+	return fmt.Sprintf("book %s is out of stock", e.BookID)
+}
+
+var bookErrorMapper = goninja.NewErrorMapper(
+	goninja.NewErrorMapping(func(err outOfStockError) (int, any) {
+		return http.StatusConflict, map[string]string{
+			"code":  "OUT_OF_STOCK",
+			"error": err.Error(),
+		}
+	}),
+)
+```
+
+```go {filename="main.go"}
+bookAPI := api.NewBookResource(db)
+bookAPI.SetErrorMapper(bookErrorMapper)
+```
+
+Each `ErrorMapping` is tried in the order it was passed to `NewErrorMapper`; the first one whose type matches (via `errors.As`, same as `DefaultErrorMapper` itself — a wrapped `outOfStockError` still matches) wins. Anything no mapping matches falls through to `DefaultErrorMapper`, so `NotFound`/`ValidationError`/`BadRequest` keep behaving exactly as documented above. Pass a `Fallback` on `goninja.ComposedErrorMapper` directly instead of using `NewErrorMapper` if you want a different fallback than the package default.
+
+## Custom error mappers by hand
+
+For anything `NewErrorMapper` doesn't fit — logic that isn't a simple per-type match, or you'd rather write the whole switch yourself — implement `ErrorMapper` directly. `BaseResource.ErrorMapper()` returns `DefaultErrorMapper{}` when nothing has been set (see also the app-wide default below), so an unconfigured resource behaves exactly like the default mapping above.
+
+The same example as above, written by hand instead:
 
 ```go {filename="handlers/book.go"}
 type outOfStockError struct {
@@ -175,5 +205,47 @@ bookAPI.SetErrorMapper(bookErrorMapper{})
 ```
 
 Every error that isn't `outOfStockError` falls through to `DefaultErrorMapper`'s own mapping unchanged, so `NotFound`/`ValidationError`/`BadRequest` still behave exactly as documented above on this resource.
+
+## One mapper for the whole app: API.SetErrorMapper
+
+`SetErrorMapper` is per resource — calling it on every `New<Model>Resource` you construct works, but repeats the same call everywhere once an app has more than a couple of resources. `API.SetErrorMapper` sets it once for the whole app, registered on the app object itself. Reach for it for an error type that's genuinely cross-resource (a rate-limit error, a maintenance-mode error, anything not tied to one model's own domain logic) — `outOfStockError`/`bookErrorMapper` above is scoped to `Book` on purpose, since nothing else in the app ever returns it.
+
+It takes `ErrorMapping`s directly — plural, one per error type you want to register — rather than a whole `ErrorMapper`: an `ErrorMapper` has no way to say "I didn't recognize this error, try the next one" (`DefaultErrorMapper` answers *every* error), so chaining whole `ErrorMapper`s together would let an earlier one silently swallow everything after it. `ErrorMapping`'s own `Matches` avoids that, so mappings from different files compose safely into one list:
+
+```go {filename="main.go"}
+type rateLimitedError struct{ RetryAfterSeconds int }
+
+func (e rateLimitedError) Error() string { return "rate limited" }
+
+app := goninja.NewAPI("Bookstore API", "0.1.0")
+app.SetErrorMapper(
+	goninja.NewErrorMapping(func(err rateLimitedError) (int, any) {
+		return http.StatusTooManyRequests, map[string]any{
+			"code":        "RATE_LIMITED",
+			"retry_after": err.RetryAfterSeconds,
+		}
+	}),
+	// add one more NewErrorMapping(...) here per additional error type —
+	// each one is tried in order, first match wins.
+)
+
+app.Mount(mux,
+	api.NewBookResource(db),
+	api.NewAuthorResource(db),
+)
+```
+
+Calling `API.SetErrorMapper` again replaces the mappings, it doesn't add to them — pass every mapping you want in one call.
+
+`Mount` picks this up automatically — no `Config`/`MountWithConfig` needed just for this. If the app already has a global auth policy or middleware and uses `MountWithConfig`, an explicit `cfg.DefaultErrorMapper` there still wins over `API.SetErrorMapper`; leave `cfg.DefaultErrorMapper` unset to let the app-level one apply there too:
+
+```go {filename="main.go"}
+app.MountWithConfig(mux, goninja.Config{
+	DefaultAuth: goninja.AuthPolicy{ /* ... */ },
+	// DefaultErrorMapper left unset — falls back to app.SetErrorMapper above.
+}, resources...)
+```
+
+Resolution order, per resource: its own `SetErrorMapper` wins if set; otherwise `Config.DefaultErrorMapper` (explicit on the `Config` passed to `MountWithConfig`, or `API.SetErrorMapper`'s value if that's unset); otherwise the package `DefaultErrorMapper`. So a resource with special-case error handling of its own can still override the app-wide default — the same "per-resource beats the global default, the global default beats the zero value" pattern `ResourceConfig.Auth` uses against `Config.DefaultAuth`.
 
 Related: [Transactions](../transactions), [Hooks & Overrides](../hooks-and-overrides).

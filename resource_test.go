@@ -334,6 +334,32 @@ func TestBaseResource_ErrorMapper_DefaultsWhenUnset(t *testing.T) {
 	}
 }
 
+func TestBaseResource_ErrorMapper_FallsBackToConfigDefault(t *testing.T) {
+	var r BaseResource
+	global := NewErrorMapper(NewErrorMapping(func(err error) (int, any) {
+		return http.StatusTeapot, nil
+	}))
+	r.SetConfig(Config{DefaultErrorMapper: global})
+
+	status, _ := r.ErrorMapper().MapError(errors.New("boom"))
+	if status != http.StatusTeapot {
+		t.Errorf("status = %d, want %d (Config.DefaultErrorMapper)", status, http.StatusTeapot)
+	}
+}
+
+func TestBaseResource_ErrorMapper_OwnMapperBeatsConfigDefault(t *testing.T) {
+	var r BaseResource
+	r.SetConfig(Config{DefaultErrorMapper: NewErrorMapper(NewErrorMapping(func(err error) (int, any) {
+		return http.StatusTeapot, nil
+	}))})
+	r.SetErrorMapper(DefaultErrorMapper{})
+
+	status, _ := r.ErrorMapper().MapError(errors.New("boom"))
+	if status != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d (the resource's own SetErrorMapper value)", status, http.StatusInternalServerError)
+	}
+}
+
 func TestBaseResource_OpenAPITags(t *testing.T) {
 	var r BaseResource
 	if r.OpenAPITags() != nil {

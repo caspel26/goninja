@@ -40,6 +40,7 @@ type API struct {
 	paths           map[string]*openapi.PathItem
 	schemas         map[string]openapi.Schema
 	securitySchemes map[string]openapi.SecurityScheme
+	errorMapper     ErrorMapper
 }
 
 // NewAPI creates a new API document with the given title/version (OpenAPI's
@@ -52,6 +53,26 @@ func NewAPI(title, version string) *API {
 		schemas:         map[string]openapi.Schema{},
 		securitySchemes: map[string]openapi.SecurityScheme{},
 	}
+}
+
+// SetErrorMapper sets an app-wide default ErrorMapper from one or more
+// ErrorMappings (build each with NewErrorMapping), applied by Mount and
+// MountWithConfig to every resource that hasn't set its own via
+// BaseResource.SetErrorMapper — one place to register per-error-type
+// handling for the whole app, rather than building a Config by hand just
+// to reach MountWithConfig.
+// Takes ErrorMappings rather than a whole ErrorMapper so mappings composed
+// from different files/resources merge into one list safely: a plain
+// ErrorMapper has no way to say "I didn't recognize this error, try the
+// next one" (DefaultErrorMapper, for instance, answers every error), so
+// chaining whole ErrorMappers would let an earlier one silently swallow
+// everything. An ErrorMapping's own Matches avoids that. Calling this more
+// than once replaces the previous mappings, it doesn't add to them. A
+// Config.DefaultErrorMapper passed explicitly to MountWithConfig still
+// wins over this if both are set — same "more specific wins" rule as
+// everything else Config touches.
+func (a *API) SetErrorMapper(mappings ...ErrorMapping) {
+	a.errorMapper = NewErrorMapper(mappings...)
 }
 
 // Add merges p's OpenAPI fragment (its paths, the schemas they reference,
@@ -84,12 +105,20 @@ func (a *API) Spec() openapi.Spec {
 }
 
 // Mount registers every resource's routes on mux and merges their OpenAPI
-// fragments into a, in one call. Call a resource's
-// BaseResource.ExcludeFromDocs() before passing it here to keep its routes
-// mounted but leave it out of the document; call its Register(mux)
-// directly instead of going through Mount to skip documenting it entirely.
+// fragments into a, in one call. If SetErrorMapper was called on a, every
+// resource gets it via SetConfig — the only Config field a plain Mount
+// applies; DefaultAuth/Middleware still need MountWithConfig. Call a
+// resource's BaseResource.ExcludeFromDocs() before passing it here to keep
+// its routes mounted but leave it out of the document; call its
+// Register(mux) directly instead of going through Mount to skip
+// documenting it entirely.
 func (a *API) Mount(mux Router, resources ...Resource) {
 	for _, r := range resources {
+		if a.errorMapper != nil {
+			if x, ok := r.(interface{ SetConfig(Config) }); ok {
+				x.SetConfig(Config{DefaultErrorMapper: a.errorMapper})
+			}
+		}
 		r.Register(mux)
 		if x, ok := r.(interface{ DocsExcluded() bool }); ok && x.DocsExcluded() {
 			continue
@@ -102,8 +131,12 @@ func (a *API) Mount(mux Router, resources ...Resource) {
 // on every resource before Register(mux), so cfg's DefaultAuth and
 // Middleware take effect when each resource's generated Register builds
 // its handlers. Use it instead of Mount once the app has a global auth
-// policy or middleware to enforce.
+// policy or middleware to enforce. cfg.DefaultErrorMapper, if set, wins
+// over a's own SetErrorMapper; otherwise a's applies here too.
 func (a *API) MountWithConfig(mux Router, cfg Config, resources ...Resource) {
+	if cfg.DefaultErrorMapper == nil {
+		cfg.DefaultErrorMapper = a.errorMapper
+	}
 	for _, r := range resources {
 		if x, ok := r.(interface{ SetConfig(Config) }); ok {
 			x.SetConfig(cfg)

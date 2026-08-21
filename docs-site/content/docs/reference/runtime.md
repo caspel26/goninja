@@ -24,18 +24,21 @@ depends on `openapi`, and the root package depends on `openapi` and `docsui`.
 ```go
 func NewAPI(title, version string) *API
 
-func (a *API) Mount(mux *http.ServeMux, resources ...Resource)
-func (a *API) MountWithConfig(mux *http.ServeMux, cfg Config, resources ...Resource)
-func (a *API) MountDocs(mux *http.ServeMux, path string, ui docsui.DocsUI)
+func (a *API) Mount(mux Router, resources ...Resource)
+func (a *API) MountWithConfig(mux Router, cfg Config, resources ...Resource)
+func (a *API) MountDocs(mux Router, path string, ui docsui.DocsUI)
 func (a *API) Add(p openapi.OpenAPIProvider)
 func (a *API) Spec() openapi.Spec
+func (a *API) SetErrorMapper(mappings ...ErrorMapping)
 ```
 
-`Resource` is what every generated `<Model>Resource` satisfies:
+`Resource` is what every generated `<Model>Resource` satisfies, and `Router` is
+what `Register` mounts onto — `*http.ServeMux` satisfies it as-is; see
+[Router Adapters](../../guides/router-adapters) for gin/echo/chi:
 
 ```go
 type Resource interface {
-    Register(mux *http.ServeMux)
+    Register(mux Router)
     openapi.OpenAPIProvider
 }
 ```
@@ -43,7 +46,9 @@ type Resource interface {
 Use `Mount` when there is no global policy to apply and `MountWithConfig` once
 there is. `MountWithConfig` calls `SetConfig` on every resource before
 registering it; a resource mounted with plain `Mount` has a zero `Config`, so
-route protection is a no-op.
+route protection is a no-op. `SetErrorMapper` is the exception: it applies via
+both `Mount` and `MountWithConfig` — see [Errors & Responses](../../guides/errors)
+for its resolution order against `Config.DefaultErrorMapper`.
 
 ## BaseResource
 
@@ -119,6 +124,19 @@ type ErrorMapper interface {
 
 type DefaultErrorMapper struct{}
 
+type ErrorMapping struct {
+    Matches func(err error) bool
+    Map     func(err error) (status int, body any)
+}
+
+func NewErrorMapping[T error](fn func(err T) (status int, body any)) ErrorMapping
+func NewErrorMapper(mappings ...ErrorMapping) ErrorMapper
+
+type ComposedErrorMapper struct {
+    Mappings []ErrorMapping
+    Fallback ErrorMapper
+}
+
 func Respond(w http.ResponseWriter, mapper ErrorMapper, err error)
 func RespondJSON(w http.ResponseWriter, status int, v any)
 ```
@@ -133,7 +151,10 @@ mapping:
 | `BadRequest` | 400 | `{"code":"BAD_REQUEST","error":"…"}` |
 | anything else | 500 | `{"code":"INTERNAL","error":"internal error"}` |
 
-Matching uses `errors.As`, so wrapping with `%w` still maps correctly. Full
+Matching uses `errors.As`, so wrapping with `%w` still maps correctly.
+`NewErrorMapper`/`NewErrorMapping[T]` compose per-error-type handlers
+declaratively instead of writing a `MapError` switch by hand — see also
+`Config.DefaultErrorMapper` below for setting one mapper app-wide. Full
 detail in [Errors & Responses](../../guides/errors).
 
 ## Validation
@@ -206,8 +227,9 @@ const (
 )
 
 type Config struct {
-    DefaultAuth AuthPolicy
-    Middleware  []func(http.Handler) http.Handler
+    DefaultAuth        AuthPolicy
+    Middleware         []func(http.Handler) http.Handler
+    DefaultErrorMapper ErrorMapper
 }
 
 type AuthPolicy struct {
