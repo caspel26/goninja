@@ -223,8 +223,9 @@ First pre-alpha release.
 
 ### Known limitations
 
-- GORM and `net/http` are assumed; there is no adapter layer for other ORMs
-  or routers.
+- GORM is assumed; there is no adapter layer for other ORMs. Routing was
+  `net/http`-only with no adapter layer for other routers (fixed in
+  [0.3.0]: gin, echo, and chi adapters).
 - A model's primary key must be a field literally named `ID`, typed `int64`
   or `string` (treated as a UUID).
 - Relation fields must be a struct value or a slice of one — pointer
