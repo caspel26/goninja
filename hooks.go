@@ -1,6 +1,6 @@
 // Hooks are the optional interfaces a resource can implement to run logic
-// around Create/Update/Delete without touching generated code (plan
-// section 5.6/5.10, Fase 6). None of these are implemented by a generated
+// around Create/Update/Delete without touching generated code. None of
+// these are implemented by a generated
 // <Model>Resource itself — implement them on a type that embeds one and is
 // wired in via BaseResource.SetSelf, so the generated handlers can see it
 // (see resource.go's Self/SetSelf).

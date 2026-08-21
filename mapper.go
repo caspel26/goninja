@@ -10,7 +10,7 @@ import (
 // handler-level error like BadRequest) into an HTTP status code and a JSON
 // response body. Generated handlers call it through
 // BaseResource.ErrorMapper(), which falls back to DefaultErrorMapper when
-// none has been set — see BaseResource.SetErrorMapper (plan section 5.11).
+// none has been set — see BaseResource.SetErrorMapper.
 type ErrorMapper interface {
 	MapError(err error) (status int, body any)
 }

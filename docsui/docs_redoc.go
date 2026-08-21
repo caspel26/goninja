@@ -4,8 +4,7 @@ import "embed"
 
 // redocAssets vendors ReDoc's standalone bundle (a single self-contained
 // JS file — no separate CSS) so /docs works fully offline when ReDoc is
-// selected — no external CDN, per plan section 6/Fase 5. See
-// redoc/LICENSE for ReDoc's license.
+// selected — no external CDN. See redoc/LICENSE for ReDoc's license.
 //
 //go:embed redoc/redoc.standalone.js
 var redocAssets embed.FS

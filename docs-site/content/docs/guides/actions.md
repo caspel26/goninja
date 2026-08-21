@@ -2,9 +2,9 @@
 title: Custom Actions
 weight: 9
 ---
-`Action` + `BaseResource.SetActions` is goninja's equivalent of
-django-ninja-aio-crud's `@action`: declare extra endpoints as data — a
-`Name`, whether it's `Detail` (mounted under `<base>/{id}/<UrlPath>`) or
+`Action` + `BaseResource.SetActions` let you declare extra endpoints as
+data — a `Name`, whether it's `Detail` (mounted under
+`<base>/{id}/<UrlPath>`) or
 collection-level (`<base>/<UrlPath>`), an HTTP `Method`, and a `Handler` —
 instead of writing route-mounting code by hand. `Register(mux)` mounts
 every action declared via `SetActions` automatically, after the generated

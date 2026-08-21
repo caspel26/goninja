@@ -1,9 +1,6 @@
 // Package goninja is the public runtime support package for code generated
 // by `goninja generate`: the base resource type generated Resources embed,
 // the transaction-aware DB(ctx) contract, and the framework error types.
-//
-// See goninja-implementation-plan.md for the full design; this file covers
-// the Phase 2 slice of it (GORM + transaction-aware queries).
 package goninja
 
 import (
@@ -19,7 +16,7 @@ type txKey struct{}
 // WithTx returns a context carrying tx, so that a later BaseResource.DB(ctx)
 // call in the same request/transaction returns tx instead of the base
 // connection. Used to make hooks and business logic that share a context
-// participate in the same transaction (plan section 5.7).
+// participate in the same transaction.
 func WithTx(ctx context.Context, tx *gorm.DB) context.Context {
 	return context.WithValue(ctx, txKey{}, tx)
 }
@@ -68,8 +65,7 @@ func (r *BaseResource) ErrorMapper() ErrorMapper {
 
 // SetOpenAPITags overrides the OpenAPI tags every operation this
 // resource's generated OpenAPI() puts in its fragment carries — how
-// Swagger UI/ReDoc/etc group its routes in a rendered doc (plan section
-// 5.10/Fase 5). Optional: a resource with none set falls back to a single
+// Swagger UI/ReDoc/etc group its routes in a rendered doc. Optional: a resource with none set falls back to a single
 // tag equal to the model's name (e.g. "Book"), applied by the generated
 // OpenAPI() method itself.
 func (r *BaseResource) SetOpenAPITags(tags ...string) {
@@ -105,7 +101,7 @@ func (r *BaseResource) DocsExcluded() bool {
 // dynamic dispatch through embedding: a type that embeds a generated
 // <Model>Resource and overrides one of its methods, or implements a hook
 // interface on itself, is invisible to code running on the embedded
-// receiver unless that receiver is told explicitly (plan section 5.10).
+// receiver unless that receiver is told explicitly.
 // The generated New<Model>Resource constructor calls SetSelf(itself) by
 // default, so a resource used directly needs no extra step; a type
 // embedding it should call SetSelf again in its own constructor, pointing
@@ -152,7 +148,7 @@ func (r *BaseResource) Actions() []Action {
 
 // Protect wraps h according to this resource's global Config
 // (DefaultAuth/Middleware, config.go) and rc's per-resource RouteAuth
-// override (resource_config.go, plan section 5.15): route is protected
+// override (resource_config.go): route is protected
 // when a rc.Auth[route] override says Public=false and (its own Auth or,
 // if unset, Config.DefaultAuth.Auth) applies, or — absent an override —
 // when route is named in Config.DefaultAuth.Routes. A protected route is

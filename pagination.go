@@ -14,7 +14,7 @@ const DefaultLimit = 20
 const MaxLimit = 100
 
 // ParseLimitOffset parses the "limit"/"offset" query parameters shared by
-// every generated List handler (plan section 5.9/Fase 4), applying
+// every generated List handler, applying
 // DefaultLimit/MaxLimit bounds. A non-integer or negative value is a
 // BadRequest, not silently ignored.
 func ParseLimitOffset(q url.Values) (limit, offset int, err error) {
@@ -42,7 +42,7 @@ func ParseLimitOffset(q url.Values) (limit, offset int, err error) {
 }
 
 // ListEnvelope is the response shape every generated List handler wraps
-// its page in (plan section 5.9) — Retrieve/Create/Update return the bare
+// its page in — Retrieve/Create/Update return the bare
 // object, List always returns this envelope so total/limit/offset travel
 // alongside the page without the caller needing a second request.
 type ListEnvelope[T any] struct {

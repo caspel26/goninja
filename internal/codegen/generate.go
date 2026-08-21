@@ -62,7 +62,7 @@ func Generate(models []Model, outDir, packageName, modelsImportPath, modelsPkg s
 }
 
 // resolveByIDFields fills in RelatedIDGoType on every byid relation field
-// (goninja:"...,byid" — plan section 5.12) by looking up the related
+// (goninja:"...,byid") by looking up the related
 // model's own ID type across the full model list, so the generated
 // Retrieve schema and OpenAPI fragment can type "<field>_id" correctly
 // instead of assuming string for every related model.

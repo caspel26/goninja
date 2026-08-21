@@ -31,7 +31,7 @@ type TaskList struct {
 // type, never the raw related struct — output types are always separate
 // from the model, so a sensitive field can't leak into a response just
 // because it exists on the related struct either. A relation field tagged
-// "byid" (plan section 5.12) instead exposes only the related model's ID,
+// "byid" instead exposes only the related model's ID,
 // as "<field>_id" — no nesting, no Preload.
 type TaskRetrieve struct {
 	ID    string `json:"id"`
@@ -55,7 +55,7 @@ type TaskUpdate struct {
 }
 
 // TaskFilters is the shape parsed from GET /tasks
-// query parameters (plan section 5.5/Fase 4): one exact-match pointer field
+// query parameters: one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
 // ones, plus Limit/Offset/Order shared by every model's list query. A nil
 // field means "no filter" — List only adds a WHERE clause for the ones the
@@ -128,7 +128,7 @@ func NewTaskResource(db *gorm.DB) *TaskResource {
 
 // TaskOps is the method set the generated handlers dispatch
 // every request through. A type embedding TaskResource and
-// overriding one of these methods (plan section 5.10) is picked up
+// overriding one of these methods is picked up
 // automatically once wired in via SetSelf — see ops() below.
 type TaskOps interface {
 	List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error)
@@ -152,9 +152,8 @@ func (r *TaskResource) ops() TaskOps {
 
 // List applies f's filters/ordering, counts the total matching rows before
 // paginating, and returns Limit/Offset rows plus that total — never a
-// Preload, by construction, which is why list/retrieve are separate tags
-// (plan section 5.5): it's the guarantee against N+1, not an
-// implementation detail.
+// Preload, by construction, which is why list/retrieve are separate tags:
+// it's the guarantee against N+1, not an implementation detail.
 func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int64, error) {
 	q := r.DB(ctx).Model(&models.Task{})
 	if f.Done != nil {
@@ -190,7 +189,7 @@ func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int
 
 // Retrieve preloads every relation field carried on the retrieve type —
 // list never does, by construction (see List above) — except one tagged
-// "byid" (plan section 5.12), which exposes only the related ID and so
+// "byid", which exposes only the related ID and so
 // skips the Preload entirely.
 func (r *TaskResource) Retrieve(ctx context.Context, id string) (*TaskRetrieve, error) {
 	q := r.DB(ctx)
@@ -329,8 +328,7 @@ func (r *TaskResource) retrieveHandler(w http.ResponseWriter, req *http.Request)
 
 // createHandler runs BeforeCreateHook/AfterCreateHook (hooks.go), if r's
 // Self() implements them, in the same transaction as the create itself —
-// a hook returning an error rolls the whole request back (plan section
-// 5.6/5.7).
+// a hook returning an error rolls the whole request back.
 func (r *TaskResource) createHandler(w http.ResponseWriter, req *http.Request) {
 	var in TaskCreate
 	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
@@ -662,7 +660,7 @@ func (r *TaskResource) openAPIActionPaths(paths map[string]*openapi.PathItem, ba
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
 // dispatch hooks.go and ops() use: a wrapper implementing
-// goninja.Configurer (plan section 5.3) customizes it, otherwise every
+// goninja.Configurer customizes it, otherwise every
 // generated default applies.
 func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
 	if c, ok := r.Self().(goninja.Configurer); ok {

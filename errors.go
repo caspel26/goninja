@@ -20,7 +20,7 @@ func codeOr(code, fallback string) string {
 
 // NotFound is returned by generated Retrieve/Update/Delete methods when no
 // row matches the given ID. Framework error type referenced from generated
-// code; mapped to 404 by DefaultErrorMapper (plan section 5.11). Code
+// code; mapped to 404 by DefaultErrorMapper. Code
 // overrides the JSON body's "code" field (default "NOT_FOUND") for a caller
 // that wants a more specific machine-readable identifier than the HTTP
 // status alone provides.

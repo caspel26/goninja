@@ -1,7 +1,4 @@
 // Command goninja is the CLI entry point for the goninja code generator.
-//
-// Phase 0 status: only `goninja generate` exists, targeting the minimal
-// prototype in internal/codegen. See goninja-implementation-plan.md.
 package main
 
 import (

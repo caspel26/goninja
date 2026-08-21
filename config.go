@@ -13,7 +13,7 @@ package goninja
 
 import "net/http"
 
-// AuthPolicy is a global default auth policy (plan section 5.15): which
+// AuthPolicy is a global default auth policy: which
 // routes require auth by default, and the Authenticator(s) that enforce
 // it, tried in order until one recognizes the request.
 type AuthPolicy struct {

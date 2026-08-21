@@ -3,9 +3,9 @@ package goninja
 // ResourceConfig lets a resource wrapper customize how the generated
 // Register(mux) and OpenAPI() methods mount and document a resource's
 // routes, and how the global default auth (Config.DefaultAuth) applies to
-// them — plan section 5.3/5.15. A resource picks this up by implementing
+// them. A resource picks this up by implementing
 // Configurer on the value passed to SetSelf, the same dispatch hooks.go and
-// method overrides use (plan section 5.10): a resource used directly, with
+// method overrides use: a resource used directly, with
 // no wrapper, gets every generated default.
 type ResourceConfig struct {
 	// Path overrides the resource's base route path (e.g. "/v1/books"),
@@ -26,8 +26,8 @@ type ResourceConfig struct {
 	Auth map[Route]RouteAuth
 }
 
-// RouteAuth is one route's override entry in ResourceConfig.Auth (plan
-// section 5.15). Its presence in the map is what makes it an override —
+// RouteAuth is one route's override entry in ResourceConfig.Auth. Its
+// presence in the map is what makes it an override —
 // there is no separate "enabled" flag to forget: Public=true and
 // unset/empty Auth both mean "public", so a resource wrapper composing this
 // map has exactly one way to express each outcome, not two that could
@@ -40,7 +40,7 @@ type RouteAuth struct {
 
 	// Public, when true, makes this route require no auth at all,
 	// regardless of what Config.DefaultAuth says — the explicit opt-out a
-	// resource needs to punch a hole in a global default (plan section 5.3).
+	// resource needs to punch a hole in a global default.
 	Public bool
 }
 

@@ -1,7 +1,7 @@
 package main
 
-// Demonstrates the Phase 7 exit criterion — testing a generated resource
-// end to end in under 10 lines — using goninjatest against a real
+// Demonstrates testing a generated resource
+// end to end in under 10 lines using goninjatest, against a real
 // generated resource (api.AuthorResource) rather than a hand-written
 // fake. No Postgres needed: goninjatest.NewDB is a plain GORM connection,
 // and the generated resource code has no Postgres-specific behavior.

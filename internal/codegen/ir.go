@@ -1,11 +1,6 @@
-// Package codegen implements the goninja Phase 0 prototype: parse Go
-// struct declarations annotated with a `goninja` tag and render generated
-// Go source from them.
-//
-// This is deliberately minimal (single tag vocabulary: list/retrieve/create,
-// no ORM, in-memory store) — its only purpose is to answer the Phase 0
-// decision-gate questions in goninja-implementation-plan.md before any
-// investment in the real engine.
+// Package codegen implements the goninja generator: parse Go struct
+// declarations annotated with a `goninja` tag and render generated Go
+// source (handlers, GORM queries, validation, OpenAPI) from them.
 package codegen
 
 import "strings"
@@ -45,7 +40,7 @@ type Field struct {
 	ValidateTag string
 	// RelatedIDGoType is the Go type of the related model's ID field,
 	// resolved by Generate (generate.go) across the full model list — only
-	// meaningful when IsRelation() && IsByID() (plan section 5.12). Left
+	// meaningful when IsRelation() && IsByID(). Left
 	// empty by ParseModels itself; Generate fills it in before rendering,
 	// falling back to "string" if the related model can't be found in the
 	// same generation run.
@@ -74,7 +69,7 @@ func (f Field) IsRelation() bool {
 }
 
 // IsByID reports whether a relation field carries the "byid" modifier on
-// its goninja tag (e.g. `goninja:"retrieve,byid"`, plan section 5.12): its
+// its goninja tag (e.g. `goninja:"retrieve,byid"`): its
 // Retrieve schema exposes only the related model's ID, as "<field>_id",
 // skipping that field's Preload — instead of nesting the related model's
 // full Retrieve type, today's only behavior for a relation field with no
@@ -143,7 +138,7 @@ func (f Field) IsNumeric() bool {
 }
 
 // OpenAPIType returns the JSON Schema "type" for the field's Go type, used
-// when generating a schema property for it (plan section 5.10/Fase 5). A
+// when generating a schema property for it. A
 // relation field's own type is never used here — the template always emits
 // a $ref to the related model's Retrieve schema instead (see IsRelation).
 func (f Field) OpenAPIType() string {
@@ -222,7 +217,7 @@ func (m Model) UpdateFields() []Field {
 }
 
 // FilterFields returns the fields exposed on the generated <Model>Filters
-// struct and honored by List's query building (plan section 5.5/Fase 4).
+// struct and honored by List's query building.
 func (m Model) FilterFields() []Field {
 	return m.fieldsWithTag("filter")
 }

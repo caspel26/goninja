@@ -8,8 +8,7 @@ import (
 	"text/template"
 )
 
-// TestGenerate_TwoModels is the Phase 1 exit criterion from
-// goninja-implementation-plan.md: the engine must generalize beyond a
+// TestGenerate_TwoModels asserts the engine generalizes beyond a
 // single hand-tuned model. Shared handler helpers (JSON responses, error
 // mapping, validation) live in the goninja package rather than being
 // generated per model, so there's no shared-file duplication risk to guard
@@ -53,7 +52,7 @@ func TestGenerate_TwoModels(t *testing.T) {
 	}
 }
 
-// TestGenerate_RelationByID is the plan section 5.12 exit criterion: a
+// TestGenerate_RelationByID asserts a
 // relation field tagged "byid" produces a Retrieve exposing only the
 // related model's ID (no Preload, no nested Retrieve), typed after the
 // related model's own IDGoType — and a relation field with no modifier
@@ -272,8 +271,7 @@ func TestRenderFile_WriteError(t *testing.T) {
 	}
 }
 
-// TestGenerate_FiltersAndUUID is the Phase 4 exit criterion from
-// goninja-implementation-plan.md: a `filter`-tagged field must produce a
+// TestGenerate_FiltersAndUUID asserts a `filter`-tagged field must produce a
 // working Filters struct/query, and a string-typed ID field (a UUID
 // primary key, per Model.IDGoType) must generate without falling back to
 // the historical int64 assumption.

@@ -5,9 +5,8 @@ import "time"
 // Book carries a real belongs-to relation to Author (GORM infers the
 // AuthorID/Author pairing by convention, no explicit foreignKey tag
 // needed). Only the retrieve schema pulls in the full Author — list stays
-// lean by construction, per plan section 5.5. Price/Published/AuthorID are
-// `filter`-tagged and CreatedAt is orderable, together exercising the
-// Phase 4 exit criterion:
+// lean by construction. Price/Published/AuthorID are
+// `filter`-tagged and CreatedAt is orderable, together exercising:
 // GET /books?published=true&price_min=10&order=-created_at&limit=20
 type Book struct {
 	ID        string    `gorm:"primaryKey;type:uuid" json:"id" goninja:"list,retrieve"`

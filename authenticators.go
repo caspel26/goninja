@@ -1,5 +1,5 @@
-// Ready-made Authenticator implementations for the two most common schemes
-// (plan section 5.15 follow-up, 2026-08-20), mirroring Django Ninja's
+// Ready-made Authenticator implementations for common auth schemes,
+// mirroring Django Ninja's
 // HttpBearer/ApiKeyHeader base classes: the request-parsing/OpenAPI-scheme
 // boilerplate is handled here, and the caller only supplies the Verify
 // closure that turns a raw token/key into a User. A caller with more

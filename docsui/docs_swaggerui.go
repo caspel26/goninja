@@ -4,7 +4,7 @@ import "embed"
 
 // swaggerUIAssets vendors the parts of swagger-ui-dist SwaggerUI actually
 // serves (bundle JS, standalone preset JS, CSS, favicon) so /docs works
-// fully offline — no external CDN, per plan section 6/Fase 5. The
+// fully offline — no external CDN. The
 // package's own index.html/swagger-initializer.js are not vendored:
 // swaggerUI.Index writes its own, small enough to inline, so it can point
 // swagger-ui at this API's own /openapi.json path. See

@@ -1,7 +1,7 @@
 // Package goninjatest provides test-only helpers for exercising a
 // goninja resource end to end, without hand-rolled httptest/sqlite
-// boilerplate in every test file — the Phase 7 exit criterion is a user
-// testing their own custom resource in under 10 lines. Kept out of the
+// boilerplate in every test file — testing a custom resource should take
+// under 10 lines. Kept out of the
 // root goninja package (like openapi/docsui/id) since it's optional and
 // self-contained: only test code imports it, and it pulls in "testing"
 // and an in-memory sqlite driver that a non-test build never needs.

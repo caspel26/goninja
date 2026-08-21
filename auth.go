@@ -1,10 +1,10 @@
 // WithUser/UserFromContext are the minimal contract between auth
-// enforcement and the rest of the framework (plan section 5.8/5.15): an
+// enforcement and the rest of the framework: an
 // Authenticator authenticates the request and returns the resulting User;
 // goninja stores it on the context via WithUser before the request reaches
 // a resource's handlers, and a resource — most often an overridden method
-// or a hook, wired in via BaseResource.SetSelf like everything else in
-// Phase 6 — reads it back out via UserFromContext. goninja doesn't impose a
+// or a hook, wired in via BaseResource.SetSelf like everything else —
+// reads it back out via UserFromContext. goninja doesn't impose a
 // user struct beyond the one method it needs.
 package goninja
 
@@ -23,7 +23,7 @@ type User interface {
 }
 
 // Authenticator inspects a request and either identifies the caller or
-// declines (plan section 5.15) — mirroring Django Ninja's auth objects
+// declines — mirroring Django Ninja's auth objects
 // (HttpBearer, ApiKeyHeader, ...) rather than a plain middleware func: the
 // object that enforces auth is also the only source of truth for how it's
 // documented, so runtime behavior and the generated OpenAPI document can't

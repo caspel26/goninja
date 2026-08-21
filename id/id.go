@@ -1,4 +1,4 @@
-// Package id is Fase 7's split of goninja's UUID-generation helper out of
+// Package id provides goninja's UUID-generation helper, split out of
 // the root goninja package — fully standalone, no dependency on the rest
 // of the runtime.
 package id

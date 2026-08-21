@@ -1,5 +1,5 @@
 // Package models holds the prototype models exercising the goninja
-// generator end to end — see goninja-implementation-plan.md phases 0-4.
+// generator end to end.
 package models
 
 // Task is the first prototype model. Its ID is a string (UUID) primary
