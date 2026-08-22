@@ -6,9 +6,9 @@ Every generated `List` handler accepts filters, ordering, and pagination through
 
 ## Filters
 
-A model field tagged `filter` gets an exact-match pointer field on the generated `<Model>Filters` struct. If the field is numeric, it also gets `Min` and `Max` pointer fields for range queries.
+A model field tagged `filter` gets an exact-match pointer field on the generated `<Model>Filters` struct. If the field is numeric, it also gets `Min` and `Max` pointer fields for range queries. `time.Time` is exact-match only — never numeric, so it never gets `Min`/`Max`.
 
-Given a `Book` model with `AuthorID`, `Price`, and `Published` fields tagged `filter`, the generator produces:
+Given a `Book` model with `AuthorID`, `Price`, `Published`, and `CreatedAt` fields tagged `filter`, the generator produces:
 
 ```go {filename="internal/api/book_generated.go"}
 type BookFilters struct {
@@ -17,6 +17,7 @@ type BookFilters struct {
 	PriceMin  *float64
 	PriceMax  *float64
 	Published *bool
+	CreatedAt *time.Time
 	Limit     int
 	Offset    int
 	Order     string
@@ -32,13 +33,14 @@ type BookFilters struct {
 | `price_min` | `PriceMin` | float64, range |
 | `price_max` | `PriceMax` | float64, range |
 | `published` | `Published` | bool, exact match |
+| `created_at` | `CreatedAt` | time.Time, exact match (RFC 3339) |
 | `limit` | `Limit` | int, pagination |
 | `offset` | `Offset` | int, pagination |
 | `order` | `Order` | string, ordering |
 
 Range filters use `_min`/`_max` suffixes, not `_gte`/`_lte`. Only the filters actually present in the query become `WHERE` clauses — an absent parameter is not treated as a zero value.
 
-Booleans are parsed with `strconv.ParseBool`. An invalid value produces a `goninja.BadRequest` with one of these exact details:
+Booleans are parsed with `strconv.ParseBool`; a `time.Time` field is parsed with `time.Parse(time.RFC3339, v)`, so `?created_at=2024-01-01T00:00:00Z` matches and `?created_at=2024-01-01` (missing the time/offset) is a `BadRequest`. An invalid value produces a `goninja.BadRequest` with one of these exact details:
 
 | Query parameter | Bad-value detail |
 |---|---|
@@ -46,6 +48,7 @@ Booleans are parsed with `strconv.ParseBool`. An invalid value produces a `gonin
 | `price_min` | `invalid price_min` |
 | `price_max` | `invalid price_max` |
 | `published` | `invalid published` |
+| `created_at` | `invalid created_at` |
 
 See [Errors & Responses](../errors) for how `BadRequest` maps to an HTTP response.
 

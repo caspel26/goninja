@@ -107,7 +107,8 @@ freely. Every extension point works from the outside:
   the resource and replace a single method.
 - **Config** — implement `Configurer` to change the mount path or restrict
   which routes are registered.
-- **Actions** — attach non-CRUD endpoints with `SetActions`.
+- **Actions** — attach non-CRUD endpoints with `goninja.Actions` at
+  construction, or `SetActions` afterward.
 
 All of these resolve through `SetSelf`/`Self()`, because Go has no dynamic
 dispatch through embedding: a generated method has to ask "has someone wrapped

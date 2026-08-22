@@ -96,14 +96,15 @@ type Author struct {
 `Book` is the belongs-to side — `AuthorID`/`Author` is a pairing GORM
 infers by naming convention, no explicit `foreignKey` tag needed. Only
 `Retrieve` pulls in the full `Author`; `List` stays lean by design.
-`Price`, `Published`, and `AuthorID` are filterable, and `CreatedAt` is
-orderable:
+`Price`, `Published`, `AuthorID`, and `CreatedAt` are all filterable (and
+`CreatedAt` is also orderable):
 
 ```go {filename="models/book.go"}
 // Book carries a real belongs-to relation to Author. Only the retrieve
 // schema pulls in the full Author — list stays lean by construction.
-// Price/Published/AuthorID are filter-tagged and CreatedAt is orderable:
-// GET /books?published=true&price_min=10&order=-created_at&limit=20
+// Price/Published/AuthorID/CreatedAt are filter-tagged, together
+// exercising:
+// GET /books?published=true&price_min=10&created_at=2024-01-01T00:00:00Z&order=-created_at&limit=20
 type Book struct {
     ID        string    `gorm:"primaryKey;type:uuid" json:"id" goninja:"list,retrieve"`
     Title     string    `json:"title" goninja:"list,retrieve,create,update" validate:"required,max=200"`
@@ -111,9 +112,14 @@ type Book struct {
     Author    Author    `json:"author" goninja:"retrieve"`
     Price     float64   `json:"price" goninja:"list,retrieve,create,update,filter" validate:"min=0"`
     Published bool      `json:"published" goninja:"list,retrieve,create,update,filter"`
-    CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at" goninja:"list,retrieve"`
+    CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at" goninja:"list,retrieve,filter"`
 }
 ```
+
+A `filter`-tagged `time.Time` field like `CreatedAt` matches on an exact
+RFC 3339 timestamp (`?created_at=2024-01-01T00:00:00Z`) — see
+[Filtering & Pagination](../../guides/querying) for the full
+exact-match/range rules per type.
 
 ### Generate the resources
 
@@ -157,8 +163,19 @@ func main() {
     mux := http.NewServeMux()
     app := goninja.NewAPI("goninja prototype", "0.1.0")
 
-    bookAPI := api.NewBookResource(db)
-    bookAPI.SetActions(bookActions(bookAPI)...) // adds POST /books/{id}/publish; see bookpublish.go
+    // PROTOTYPE_API_KEY is optional — set it to see goninja.Authenticator
+    // protect create/update/delete (and, via actionAuth below, publish
+    // too) end to end; unset, the prototype stays fully public for
+    // frictionless local exploration. actionAuth is nil in that case, so
+    // bookActions leaves publish's Auth unset (falls back to whatever
+    // ResourceConfig.Auth/Config.DefaultAuth.Routes say, i.e. public here).
+    apiKey := os.Getenv("PROTOTYPE_API_KEY")
+    var actionAuth *goninja.RouteAuth
+    if apiKey != "" {
+        actionAuth = &goninja.RouteAuth{Auth: []goninja.Authenticator{newAPIKeyAuth(apiKey)}}
+    }
+
+    bookAPI := api.NewBookResource(db, goninja.Actions(bookActions, actionAuth)) // adds POST /books/{id}/publish; see bookpublish.go
 
     resources := []goninja.Resource{
         api.NewTaskResource(db),
@@ -166,10 +183,7 @@ func main() {
         bookAPI,
     }
 
-    // PROTOTYPE_API_KEY is optional — set it to see goninja.Authenticator
-    // protect create/update/delete end to end; unset, the prototype stays
-    // fully public for frictionless local exploration.
-    if apiKey := os.Getenv("PROTOTYPE_API_KEY"); apiKey != "" {
+    if apiKey != "" {
         cfg := goninja.Config{
             DefaultAuth: goninja.AuthPolicy{
                 Routes: []goninja.Route{goninja.RouteCreate, goninja.RouteUpdate, goninja.RouteDelete},
@@ -177,7 +191,7 @@ func main() {
             },
         }
         app.MountWithConfig(mux, cfg, resources...)
-        log.Println("PROTOTYPE_API_KEY set: create/update/delete require X-API-Key")
+        log.Println("PROTOTYPE_API_KEY set: create/update/delete/publish require X-API-Key")
     } else {
         app.Mount(mux, resources...)
     }
@@ -191,7 +205,8 @@ func main() {
 `PROTOTYPE_API_KEY` is optional. When set, `main.go` switches from
 `app.Mount` to `app.MountWithConfig` and wires `auth.go`'s
 `newAPIKeyAuth` — a `goninja.APIKeyHeader` checking `X-API-Key` at
-constant time — to protect create/update/delete on every resource:
+constant time — to protect create/update/delete (and, via `actionAuth`,
+`publish`) on every resource:
 
 ```go {filename="auth.go"}
 type apiKeyUser struct{}
@@ -222,8 +237,11 @@ custom action — `POST /books/{id}/publish` — that flips a book's
 `Retrieve`, rather than duplicating its `Preload`/error-mapping logic:
 
 ```go {filename="bookpublish.go"}
-// bookActions returns the custom actions to declare on r via SetActions.
-func bookActions(r *api.BookResource) []goninja.Action {
+// bookActions returns the custom actions to declare on r via
+// goninja.Actions (main.go) — auth may be nil, see the "Auth on an
+// Action" section of Custom Actions for why it's a parameter here
+// instead of a separate Config.DefaultAuth.Routes entry.
+func bookActions(r *api.BookResource, auth *goninja.RouteAuth) []goninja.Action {
     return []goninja.Action{
         {
             Name:    "publish",
@@ -236,6 +254,7 @@ func bookActions(r *api.BookResource) []goninja.Action {
                 "200": {Description: "OK"},
                 "404": {Description: "Not found"},
             },
+            Auth: auth,
         },
     }
 }
@@ -263,9 +282,13 @@ func publishBookHandler(r *api.BookResource) http.HandlerFunc {
 ```
 
 `main.go` wires it explicitly right next to `app.Mount(...)` —
-`bookAPI.SetActions(bookActions(bookAPI)...)` — rather than hiding it
-behind a custom constructor, so `main.go` alone shows everything that's
-actually mounted.
+`api.NewBookResource(db, goninja.Actions(bookActions, actionAuth))` —
+naming the resource, the action-builder, and the auth right at the call
+site, rather than hiding any of it behind a custom constructor of your
+own, so `main.go` alone still shows everything that's actually mounted.
+See [Custom Actions](../../guides/actions) for why `goninja.Actions`
+attaches at construction instead of a separate `SetActions` call
+afterward.
 
 ### Run it
 
