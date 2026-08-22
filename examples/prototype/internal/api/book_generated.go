@@ -78,6 +78,7 @@ type BookFilters struct {
 	PriceMin  *float64
 	PriceMax  *float64
 	Published *bool
+	CreatedAt *time.Time
 	Limit     int
 	Offset    int
 	// Order is a list-field JSON name, optionally "-"-prefixed for
@@ -196,6 +197,9 @@ func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int
 	}
 	if f.Published != nil {
 		q = q.Where("published = ?", *f.Published)
+	}
+	if f.CreatedAt != nil {
+		q = q.Where("created_at = ?", *f.CreatedAt)
 	}
 
 	var total int64
@@ -338,6 +342,14 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 			return f, goninja.BadRequest{Detail: "invalid published"}
 		}
 		f.Published = &parsed
+	}
+
+	if v := q.Get("created_at"); v != "" {
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid created_at"}
+		}
+		f.CreatedAt = &parsed
 	}
 
 	limit, offset, err := goninja.ParseLimitOffset(q)
@@ -564,6 +576,7 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 		{Name: "price_min", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
 		{Name: "price_max", In: "query", Schema: openapi.Schema{Type: "number", Format: "double"}},
 		{Name: "published", In: "query", Schema: openapi.Schema{Type: "boolean"}},
+		{Name: "created_at", In: "query", Schema: openapi.Schema{Type: "string", Format: "date-time"}},
 		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
 		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
 		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},

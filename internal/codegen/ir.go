@@ -240,10 +240,16 @@ func (m Model) IDGoType() string {
 }
 
 // UsesTime reports whether any generated schema field is time.Time,
-// meaning the generated file needs to import "time".
+// meaning the generated file needs to import "time" — either because a
+// schema field carries it (list/retrieve/create/update) or because a
+// `filter`-tagged time.Time field's generated parse<Model>Filters branch
+// calls time.Parse (see model.go.tmpl).
 func (m Model) UsesTime() bool {
 	for _, f := range m.Fields {
-		if f.GoType == goTypeTime && (f.HasTag("list") || f.HasTag("retrieve") || f.HasTag("create") || f.HasTag("update")) {
+		if f.GoType != goTypeTime {
+			continue
+		}
+		if f.HasTag("list") || f.HasTag("retrieve") || f.HasTag("create") || f.HasTag("update") || f.HasTag("filter") {
 			return true
 		}
 	}
