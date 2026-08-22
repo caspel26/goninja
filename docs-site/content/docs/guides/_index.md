@@ -31,4 +31,5 @@ assumes you have already been through [Getting Started](../getting-started).
   {{< card link="auth" title="Authentication" icon="lock-closed" subtitle="Authenticator objects, per-route policy and the built-in schemes." >}}
   {{< card link="testing" title="Testing" icon="beaker" subtitle="Drive a real resource over HTTP against in-memory SQLite." >}}
   {{< card link="router-adapters" title="Router Adapters" icon="switch-horizontal" subtitle="Mount generated resources on gin, echo, or chi instead of net/http." >}}
+  {{< card link="best-practices" title="Best Practices" icon="badge-check" subtitle="Project layout and judgment calls for a real app, not just a demo." >}}
 {{< /cards >}}
