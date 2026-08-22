@@ -13,6 +13,27 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `filter`-tagged `time.Time` field failed to compile** — `internal/codegen/templates/model.go.tmpl`, `internal/codegen/ir.go`
+
+  `parse<Model>Filters`' exact-match branch only special-cased
+  bool/string/float; a `time.Time` field fell through to the int64
+  fallback, generating the invalid conversion `time.Time(n)`. Found via a
+  real external consumer project filtering on a timestamp field — exactly
+  the kind of bug dogfooding was meant to surface. Fixed by special-casing
+  `time.Time` to `time.Parse(time.RFC3339, v)`; `Model.UsesTime()` also
+  needed to recognize a `filter`-only `time.Time` field (previously only
+  checked `list`/`retrieve`/`create`/`update`) so `"time"` gets imported
+  in that case too. `examples/prototype/models/book.go`'s `CreatedAt` is
+  now permanently `filter`-tagged as the regression proof (was
+  `list,retrieve` only); `internal/codegen`'s
+  `TestGenerate_EveryScalarFilterTypeCompiles` actually compiles a
+  generated file covering every recognized scalar type in one pass —
+  every prior codegen test only checked generated source text, which is
+  why this slipped through: `go/format.Source` formats syntax, it doesn't
+  type-check.
+
 ## [0.4.0] - 2026-08-21
 
 ### Added

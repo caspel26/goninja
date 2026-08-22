@@ -363,6 +363,12 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 		}
 		parsed := {{.GoType}}(n)
 		f.{{.Name}} = &parsed
+{{- else if eq .GoType "time.Time"}}
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
+		}
+		f.{{.Name}} = &parsed
 {{- else}}
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {

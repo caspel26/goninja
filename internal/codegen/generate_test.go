@@ -1,7 +1,9 @@
 package codegen
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -275,6 +277,170 @@ func TestRenderFile_WriteError(t *testing.T) {
 // working Filters struct/query, and a string-typed ID field (a UUID
 // primary key, per Model.IDGoType) must generate without falling back to
 // the historical int64 assumption.
+// TestGenerate_TimeFilterCompiles is a regression test for a real bug
+// found via examples/prototype/models/book.go's Book.CreatedAt: a
+// `filter`-tagged time.Time field fell through parse<Model>Filters'
+// exact-match branch to its int64 fallback, generating the invalid
+// conversion time.Time(n), which doesn't compile. The fix special-cases
+// time.Time to time.Parse(time.RFC3339, v) instead.
+func TestGenerate_TimeFilterCompiles(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Widget",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "CreatedAt", GoType: "time.Time", JSONName: "created_at", Tags: []string{"list", "retrieve", "filter"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(outDir, "widget_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	if strings.Contains(got, "time.Time(n)") {
+		t.Error("generated file still contains the invalid time.Time(n) conversion")
+	}
+	for _, want := range []string{
+		`time.Parse(time.RFC3339, v)`,
+		`f.CreatedAt = &parsed`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+// TestGenerate_EveryScalarFilterTypeCompiles is the broader regression
+// guard the time.Time bug (above) exposed a gap in: none of this file's
+// other tests actually type-check the generated output — go/format.Source
+// (generate.go) only formats syntax, so an invalid conversion like
+// time.Time(n) passed silently until it hit a real consumer
+// (examples/prototype's Book.CreatedAt). This covers every type
+// scalarGoTypes (ir.go) recognizes as a filterable column in one pass, by
+// actually compiling the generated output in a throwaway module against
+// this repo's own goninja package (a local replace, not a tagged
+// release — this is testing the engine against itself, not simulating an
+// external consumer the way examples/prototype/ticketdesk-style testing
+// does).
+//
+// Reasoning for why time.Time was the only type actually at risk, checked
+// here rather than just asserted: parse<Model>Filters' exact-match branch
+// (model.go.tmpl) is bool -> string -> float -> time.Time -> int64
+// fallback. Every scalarGoTypes member other than time.Time is bool,
+// string, a float, or an integer type — and Go's conversion rules
+// guarantee int64(n) converts to any other integer type (int8..uint64,
+// byte, rune) or float type without a compile error (only overflow/
+// truncation at runtime, which is an existing, separate concern from this
+// bug). time.Time was the only member with no defined conversion from
+// int64, which is exactly what broke.
+func TestGenerate_EveryScalarFilterTypeCompiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles a real temp module; skipped in -short")
+	}
+
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scalarTypes := []string{
+		"string", "bool",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64",
+		"byte", "rune",
+		"time.Time",
+	}
+
+	fields := []Field{
+		{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+	}
+	var modelFieldsSrc strings.Builder
+	modelFieldsSrc.WriteString("\tID string `json:\"id\"`\n")
+	for i, gt := range scalarTypes {
+		name := fmt.Sprintf("F%dField", i)
+		json := fmt.Sprintf("f%d_field", i)
+		fields = append(fields, Field{
+			Name: name, GoType: gt, JSONName: json,
+			Tags: []string{"list", "retrieve", "create", "update", "filter"},
+		})
+		modelFieldsSrc.WriteString(fmt.Sprintf("\t%s %s `json:%q`\n", name, gt, json))
+	}
+	models := []Model{{Name: "Everything", Fields: fields}}
+
+	tmp := t.TempDir()
+	modelsDir := filepath.Join(tmp, "models")
+	apiDir := filepath.Join(tmp, "internal", "api")
+	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	modelsSrc := "package models\n\nimport \"time\"\n\nvar _ = time.Time{}\n\ntype Everything struct {\n" +
+		modelFieldsSrc.String() + "}\n"
+	if err := os.WriteFile(filepath.Join(modelsDir, "everything.go"), []byte(modelsSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Generate(models, apiDir, "api", "compiletest/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	goMod := "module compiletest\n\ngo 1.25.0\n\nrequire github.com/caspel26/goninja v0.0.0\n\n" +
+		"replace github.com/caspel26/goninja => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = tmp
+	if out, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy: %v\n%s", err, out)
+	}
+
+	build := exec.Command("go", "build", "./...")
+	build.Dir = tmp
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("generated code does not compile:\n%s", out)
+	}
+}
+
+// TestGenerate_TimeFilterOnlyFieldImportsTime covers the specific edge
+// case UsesTime's fix addresses: a time.Time field tagged only `filter`
+// (no list/retrieve/create/update) still needs "time" imported, since
+// its generated parse<Model>Filters branch calls time.Parse.
+func TestGenerate_TimeFilterOnlyFieldImportsTime(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Widget",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "ArchivedAt", GoType: "time.Time", JSONName: "archived_at", Tags: []string{"filter"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(outDir, "widget_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	if !strings.Contains(got, "\"time\"") {
+		t.Errorf("expected generated file to import \"time\" for a filter-only time.Time field, got:\n%s", got)
+	}
+}
+
 func TestGenerate_FiltersAndUUID(t *testing.T) {
 	models := []Model{
 		{
