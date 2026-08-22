@@ -80,8 +80,11 @@ func (r *BaseResource) DocsExcluded() bool
 // Applied by MountWithConfig; consulted by generated Register.
 func (r *BaseResource) SetConfig(cfg Config)
 func (r *BaseResource) Config() Config
-func (r *BaseResource) Protect(route Route, cfg ResourceConfig, h http.HandlerFunc) http.HandlerFunc
-func (r *BaseResource) SecurityFor(route Route, cfg ResourceConfig) []Authenticator
+func (r *BaseResource) Protect(route Route, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc
+func (r *BaseResource) ProtectAction(a Action, rc ResourceConfig) http.HandlerFunc
+func (r *BaseResource) SecurityFor(route Route, rc ResourceConfig) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme)
+func (r *BaseResource) SecurityForAction(a Action, rc ResourceConfig) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme)
+func (r *BaseResource) CheckStrictAuth(routes []Route, actions []Action, rc ResourceConfig)
 ```
 
 {{< callout type="warning" >}}
@@ -230,6 +233,7 @@ type Config struct {
     DefaultAuth        AuthPolicy
     Middleware         []func(http.Handler) http.Handler
     DefaultErrorMapper ErrorMapper
+    StrictAuth         bool
 }
 
 type AuthPolicy struct {
@@ -306,13 +310,27 @@ type Action struct {
     Handler   http.HandlerFunc
     Summary   string
     Responses map[string]openapi.Response
+    Auth      *RouteAuth
 }
 ```
+
+`Auth`, if non-nil, decides this action's auth directly (see
+[Authentication](../../guides/auth)) instead of falling back to
+`Route(Name)` against `ResourceConfig.Auth`/`Config.DefaultAuth.Routes`.
 
 `Detail: true` mounts under `<base>/{id}/<UrlPath>`, otherwise
 `<base>/<UrlPath>`. `Name` is the key `ResourceConfig.Auth` targets, converted
 to a `Route` where needed. A non-empty `Summary` is what puts the action in the
 OpenAPI document. See [Custom Actions](../../guides/actions).
+
+```go
+func Actions[R interface{ SetActions(...Action) }, A any](build func(R, A) []Action, arg A) func(R)
+```
+
+Builds a `<Model>Option` (see [Generated Code](../generated-code)) from an
+action-builder function, for attaching actions right at construction:
+`api.NewBookResource(db, goninja.Actions(bookActions, actionAuth))`
+instead of a separate `SetActions` call afterward.
 
 ## Testing helpers
 

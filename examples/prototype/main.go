@@ -51,12 +51,25 @@ func main() {
 	app := goninja.NewAPI("goninja prototype", "0.1.0")
 	app.SetErrorMapper(appErrorMappings()...) // maps alreadyCompletedError app-wide; see errors.go
 
-	taskAPI := api.NewTaskResource(db)
-	taskAPI.SetActions(taskActions(taskAPI)...) // adds POST /tasks/{id}/complete; see taskcomplete.go
+	// PROTOTYPE_API_KEY is optional — set it to see goninja.Authenticator
+	// protect create/update/delete (and, via actionAuth below, the two
+	// custom actions too) end to end (see auth.go); unset, the prototype
+	// stays fully public for frictionless local exploration. actionAuth is
+	// built here (nil when apiKey is unset) so it can be passed straight
+	// into bookActions/taskActions via Action.Auth, instead of separately
+	// relisting "publish"/"complete" in cfg.DefaultAuth.Routes below — see
+	// bookActions (bookpublish.go) for why that separate list is exactly
+	// the mistake Action.Auth exists to avoid.
+	apiKey := os.Getenv("PROTOTYPE_API_KEY")
+	var actionAuth *goninja.RouteAuth
+	if apiKey != "" {
+		actionAuth = &goninja.RouteAuth{Auth: []goninja.Authenticator{newAPIKeyAuth(apiKey)}}
+	}
 
-	bookAPI := api.NewBookResource(db)
-	bookAPI.SetActions(bookActions(bookAPI)...) // adds POST /books/{id}/publish; see bookpublish.go
-	bookAPI.SetErrorMapper(bookErrorMapper())   // maps alreadyPublishedError to 409; see errors.go
+	taskAPI := api.NewTaskResource(db, goninja.Actions(taskActions, actionAuth)) // adds POST /tasks/{id}/complete; see taskcomplete.go
+
+	bookAPI := api.NewBookResource(db, goninja.Actions(bookActions, actionAuth)) // adds POST /books/{id}/publish; see bookpublish.go
+	bookAPI.SetErrorMapper(bookErrorMapper())                                    // maps alreadyPublishedError to 409; see errors.go
 
 	resources := []goninja.Resource{
 		taskAPI,
@@ -64,10 +77,7 @@ func main() {
 		bookAPI,
 	}
 
-	// PROTOTYPE_API_KEY is optional — set it to see goninja.Authenticator
-	// protect create/update/delete end to end (see auth.go); unset, the
-	// prototype stays fully public for frictionless local exploration.
-	if apiKey := os.Getenv("PROTOTYPE_API_KEY"); apiKey != "" {
+	if apiKey != "" {
 		cfg := goninja.Config{
 			DefaultAuth: goninja.AuthPolicy{
 				Routes: []goninja.Route{goninja.RouteCreate, goninja.RouteUpdate, goninja.RouteDelete},
@@ -75,7 +85,7 @@ func main() {
 			},
 		}
 		app.MountWithConfig(mux, cfg, resources...)
-		log.Println("PROTOTYPE_API_KEY set: create/update/delete require X-API-Key")
+		log.Println("PROTOTYPE_API_KEY set: create/update/delete/publish/complete require X-API-Key")
 	} else {
 		app.Mount(mux, resources...)
 	}

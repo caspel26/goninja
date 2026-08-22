@@ -48,4 +48,16 @@ type Config struct {
 	// default, and this global default beats the package DefaultErrorMapper
 	// when both are unset — see BaseResource.ErrorMapper.
 	DefaultErrorMapper ErrorMapper
+
+	// StrictAuth, when true, makes generated Register(mux) methods panic
+	// at startup if any route they're about to mount (CRUD or Action) has
+	// no explicit auth decision anywhere — not in ResourceConfig.Auth, not
+	// via Action.Auth, and not named in DefaultAuth.Routes. "Explicit"
+	// includes RouteAuth{Public: true}/Action.Auth{Public: true}: a route
+	// deliberately left public is a decision, not an omission — this
+	// catches the route nobody actually decided about, the default
+	// failure mode being silent public exposure instead of a startup
+	// error. False (the default) changes nothing: an unclassified route
+	// stays silently public, same as before this field existed.
+	StrictAuth bool
 }

@@ -23,7 +23,13 @@ import (
 )
 
 // bookActions returns the custom actions to declare on r via SetActions.
-func bookActions(r *api.BookResource) []goninja.Action {
+// auth, if non-nil, protects publish directly via Action.Auth — it's easy
+// to add a custom action and forget to also list it in
+// Config.DefaultAuth.Routes, which would leave it silently public even
+// with PROTOTYPE_API_KEY set (this one used to be exactly that, before
+// Action.Auth existed); nil (PROTOTYPE_API_KEY unset) keeps publish fully
+// public, matching every other route in that case.
+func bookActions(r *api.BookResource, auth *goninja.RouteAuth) []goninja.Action {
 	return []goninja.Action{
 		{
 			Name:    "publish",
@@ -36,6 +42,7 @@ func bookActions(r *api.BookResource) []goninja.Action {
 				"200": {Description: "OK"},
 				"404": {Description: "Not found"},
 			},
+			Auth: auth,
 		},
 	}
 }

@@ -13,6 +13,40 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Added
+
+- **`Action.Auth`, `Config.StrictAuth`, `goninja.Actions`, and variadic `New<Model>Resource` constructors** — `actions.go`, `config.go`, `resource.go`, `internal/codegen/templates/model.go.tmpl`
+
+  `Action.Auth *RouteAuth`, if set, decides an action's auth directly,
+  right where the action is declared — `ProtectAction`/`SecurityForAction`
+  consult it before falling back to `ResourceConfig.Auth`/
+  `Config.DefaultAuth.Routes` keyed by `Route(a.Name)` (the only option
+  before this). Found via a real external consumer project: a growing set
+  of custom actions each needing to be re-listed by name in a separate
+  auth policy is easy to get out of sync with — add a new action, forget
+  to list it there, and it's silently public.
+
+  `Config.StrictAuth: true` catches exactly that class of mistake (for
+  CRUD routes too, not just actions) at startup instead of silently:
+  generated `Register(mux)` now calls `BaseResource.CheckStrictAuth` with
+  every route it's about to mount, before mounting any of them, and it
+  panics naming every one with no explicit auth decision anywhere — not
+  protected-or-public, just *undecided*. `RouteAuth{Public: true}` is
+  itself an explicit decision and doesn't trigger it; only a route nobody
+  mentioned at all does. `false` (the default) changes nothing for
+  existing apps.
+
+  Every generated `New<Model>Resource(db *gorm.DB)` is now
+  `New<Model>Resource(db *gorm.DB, opts ...<Model>Option)` — variadic, so
+  every existing zero-option call site keeps compiling unchanged.
+  `goninja.Actions[R interface{ SetActions(...Action) }, A
+  any](build func(R, A) []Action, arg A) func(R)` builds one of these
+  `Option`s from an action-builder function, so actions attach right at
+  construction — `api.NewBookResource(db,
+  goninja.Actions(bookActions, actionAuth))` — instead of a separate
+  `SetActions` call afterward. `examples/prototype/main.go` uses this for
+  both `Task` and `Book`.
+
 ### Fixed
 
 - **A `filter`-tagged `time.Time` field failed to compile** — `internal/codegen/templates/model.go.tmpl`, `internal/codegen/ir.go`

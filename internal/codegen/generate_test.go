@@ -186,12 +186,87 @@ func TestGenerate_ActionsDispatch(t *testing.T) {
 
 	for _, want := range []string{
 		"for _, a := range r.Actions() {",
-		"r.Protect(goninja.Route(a.Name), cfg, a.Handler)",
+		"r.ProtectAction(a, cfg)",
 		"a.Summary",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
 		}
+	}
+}
+
+// TestGenerate_RegisterCallsCheckStrictAuth asserts generated Register(mux)
+// calls r.CheckStrictAuth with every route it's about to mount, before
+// mounting any of them — the codegen half of Config.StrictAuth (the
+// runtime half, resource.go's CheckStrictAuth itself, has its own direct
+// tests).
+// TestGenerate_ConstructorAcceptsOptions asserts New<Model>Resource is
+// generated as a variadic-Option constructor (func(db *gorm.DB, opts
+// ...<Model>Option) *<Model>Resource, applying each opt in order) rather
+// than a fixed func(db *gorm.DB) — the shape goninja.Actions relies on
+// to attach actions right at construction (New<Model>Resource(db,
+// goninja.Actions(build, arg))) instead of a separate SetActions step
+// afterward. Real end-to-end proof (this actually compiles and an
+// applied Option actually runs) lives in examples/prototype's own
+// main.go/errors_test.go, which use exactly this pattern against real
+// generated resources.
+func TestGenerate_ConstructorAcceptsOptions(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Book",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(outDir, "book_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	for _, want := range []string{
+		"type BookOption func(*BookResource)",
+		"func NewBookResource(db *gorm.DB, opts ...BookOption) *BookResource {",
+		"for _, opt := range opts {",
+		"opt(r)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestGenerate_RegisterCallsCheckStrictAuth(t *testing.T) {
+	models := []Model{
+		{
+			Name: "Book",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+			},
+		},
+	}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(outDir, "book_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	if !strings.Contains(got, "r.CheckStrictAuth(enabledRoutes, r.Actions(), cfg)") {
+		t.Errorf("expected generated Register to call r.CheckStrictAuth before mounting anything, got:\n%s", got)
+	}
+	if i, j := strings.Index(got, "CheckStrictAuth"), strings.Index(got, "mux.HandleFunc"); i == -1 || j == -1 || i > j {
+		t.Errorf("expected CheckStrictAuth to run before the first mux.HandleFunc call")
 	}
 }
 

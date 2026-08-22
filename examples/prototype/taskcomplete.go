@@ -20,7 +20,10 @@ import (
 )
 
 // taskActions returns the custom actions to declare on r via SetActions.
-func taskActions(r *api.TaskResource) []goninja.Action {
+// auth, if non-nil, protects complete directly via Action.Auth — see
+// bookActions (bookpublish.go) for why this exists instead of relisting
+// the route in Config.DefaultAuth.Routes.
+func taskActions(r *api.TaskResource, auth *goninja.RouteAuth) []goninja.Action {
 	return []goninja.Action{
 		{
 			Name:    "complete",
@@ -33,6 +36,7 @@ func taskActions(r *api.TaskResource) []goninja.Action {
 				"200": {Description: "OK"},
 				"404": {Description: "Not found"},
 			},
+			Auth: auth,
 		},
 	}
 }

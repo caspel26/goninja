@@ -5,7 +5,9 @@ package goninja
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caspel26/goninja/openapi"
 	"gorm.io/gorm"
@@ -162,10 +164,28 @@ func (r *BaseResource) Actions() []Action {
 // request lets it through (tried in order), stores the resulting User via
 // WithUser, and otherwise responds 401 once every Authenticator has
 // declined. Config.Middleware always wraps h, protected or not. Generated
-// Register(mux) methods call this around every handler they mount.
+// Register(mux) methods call this around every CRUD handler they mount;
+// ProtectAction is the equivalent for an Action.
 func (r *BaseResource) Protect(route Route, rc ResourceConfig, h http.HandlerFunc) http.HandlerFunc {
+	auths, protected := r.authenticatorsFor(route, rc)
+	return r.protect(h, auths, protected)
+}
+
+// ProtectAction is Protect for an Action: consults a.Auth first (see
+// Action.Auth), falling back to the same Route(a.Name)-keyed lookup
+// Protect itself uses for CRUD routes when a.Auth is nil. Generated
+// Register(mux) methods call this around every Action they mount.
+func (r *BaseResource) ProtectAction(a Action, rc ResourceConfig) http.HandlerFunc {
+	auths, protected := r.authenticatorsForAction(a, rc)
+	return r.protect(a.Handler, auths, protected)
+}
+
+// protect is Protect/ProtectAction's shared tail once each has resolved
+// its own (auths, protected) pair — see authenticatorsFor/
+// authenticatorsForAction.
+func (r *BaseResource) protect(h http.HandlerFunc, auths []Authenticator, protected bool) http.HandlerFunc {
 	wrapped := http.Handler(h)
-	if auths, protected := r.authenticatorsFor(route, rc); protected {
+	if protected {
 		wrapped = requireAuth(auths, wrapped)
 	}
 	for i := len(r.config.Middleware) - 1; i >= 0; i-- {
@@ -180,8 +200,18 @@ func (r *BaseResource) Protect(route Route, rc ResourceConfig, h http.HandlerFun
 // requirement list (nil if route isn't protected, one alternative entry
 // per resolved Authenticator), and schemes collects each Authenticator's
 // SecurityScheme keyed by Name for Components.SecuritySchemes.
+// SecurityForAction is the equivalent for an Action.
 func (r *BaseResource) SecurityFor(route Route, rc ResourceConfig) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme) {
 	auths, protected := r.authenticatorsFor(route, rc)
+	return r.securityFor(auths, protected)
+}
+
+func (r *BaseResource) SecurityForAction(a Action, rc ResourceConfig) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme) {
+	auths, protected := r.authenticatorsForAction(a, rc)
+	return r.securityFor(auths, protected)
+}
+
+func (r *BaseResource) securityFor(auths []Authenticator, protected bool) (reqs []map[string][]string, schemes map[string]openapi.SecurityScheme) {
 	if !protected || len(auths) == 0 {
 		return nil, nil
 	}
@@ -195,18 +225,92 @@ func (r *BaseResource) SecurityFor(route Route, rc ResourceConfig) (reqs []map[s
 
 func (r *BaseResource) authenticatorsFor(route Route, rc ResourceConfig) (auths []Authenticator, protected bool) {
 	if ra, ok := rc.Auth[route]; ok {
-		if ra.Public {
-			return nil, false
-		}
-		if len(ra.Auth) > 0 {
-			return ra.Auth, true
-		}
-		return r.config.DefaultAuth.Auth, true
+		return r.resolveRouteAuth(ra)
 	}
 	if containsRoute(r.config.DefaultAuth.Routes, route) {
 		return r.config.DefaultAuth.Auth, true
 	}
 	return nil, false
+}
+
+// authenticatorsForAction is authenticatorsFor's Action-aware counterpart:
+// a.Auth, if set, decides the outcome directly (see Action.Auth); nil
+// falls back to the same Route(a.Name)-keyed lookup a CRUD route uses.
+func (r *BaseResource) authenticatorsForAction(a Action, rc ResourceConfig) (auths []Authenticator, protected bool) {
+	if a.Auth != nil {
+		return r.resolveRouteAuth(*a.Auth)
+	}
+	return r.authenticatorsFor(Route(a.Name), rc)
+}
+
+// resolveRouteAuth is the RouteAuth -> (auths, protected) resolution
+// shared by an explicit ResourceConfig.Auth[route] entry and an explicit
+// Action.Auth: Public wins outright; a non-empty Auth replaces the
+// default; an empty RouteAuth{} opts into Config.DefaultAuth.Auth.
+func (r *BaseResource) resolveRouteAuth(ra RouteAuth) (auths []Authenticator, protected bool) {
+	if ra.Public {
+		return nil, false
+	}
+	if len(ra.Auth) > 0 {
+		return ra.Auth, true
+	}
+	return r.config.DefaultAuth.Auth, true
+}
+
+// classified reports whether route has an explicit auth decision anywhere
+// — an entry in rc.Auth, or named in Config.DefaultAuth.Routes — distinct
+// from whether it's actually protected: RouteAuth{Public: true} is also
+// an explicit decision, so a route left public on purpose doesn't count
+// as unclassified. Used by CheckStrictAuth to catch the route nobody
+// actually decided about, not the one deliberately left open.
+func (r *BaseResource) classified(route Route, rc ResourceConfig) bool {
+	if _, ok := rc.Auth[route]; ok {
+		return true
+	}
+	return containsRoute(r.config.DefaultAuth.Routes, route)
+}
+
+// classifiedAction is classified's Action-aware counterpart: a's own Auth,
+// if set, is itself the explicit decision (see Action.Auth); nil falls
+// back to classified's Route(a.Name)-keyed check.
+func (r *BaseResource) classifiedAction(a Action, rc ResourceConfig) bool {
+	if a.Auth != nil {
+		return true
+	}
+	return r.classified(Route(a.Name), rc)
+}
+
+// CheckStrictAuth panics if Config.StrictAuth is set and any route in
+// routes, or any Action in actions, has no explicit auth decision (see
+// classified/classifiedAction) — a no-op when StrictAuth is false (the
+// default), so an app that never opts in sees no behavior change.
+// Generated Register(mux) methods call this once, with every route
+// they're about to mount, before mounting any of them — so a startup
+// panic replaces what would otherwise be a silently public endpoint,
+// rather than that endpoint working normally until someone notices.
+func (r *BaseResource) CheckStrictAuth(routes []Route, actions []Action, rc ResourceConfig) {
+	if !r.config.StrictAuth {
+		return
+	}
+	var unclassified []string
+	for _, route := range routes {
+		if !r.classified(route, rc) {
+			unclassified = append(unclassified, string(route))
+		}
+	}
+	for _, a := range actions {
+		if !r.classifiedAction(a, rc) {
+			unclassified = append(unclassified, a.Name)
+		}
+	}
+	if len(unclassified) > 0 {
+		panic(fmt.Sprintf(
+			"goninja: StrictAuth is set but these routes have no explicit auth decision: %s — "+
+				"add each to ResourceConfig.Auth or Action.Auth (RouteAuth{Public: true} if intentional), "+
+				"or name it in Config.DefaultAuth.Routes",
+			strings.Join(unclassified, ", "),
+		))
+	}
 }
 
 // requireAuth wraps next so the request reaches it only once one of auths
