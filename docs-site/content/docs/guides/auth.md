@@ -66,6 +66,51 @@ works exactly as before — a resource it mounts gets a zero `Config`, so
 nothing is protected and no middleware runs, unless you switch that
 resource to `api.MountWithConfig`.
 
+## Auth on a custom Action
+
+`ResourceConfig.Auth` targets a route by name (`Route(action.Name)`) — a
+new [Action](../actions) is easy to add and forget to also list there,
+leaving it silently public. `Action.Auth` decides an action's auth right
+where the action is declared instead:
+
+```go
+protected := &goninja.RouteAuth{Auth: []goninja.Authenticator{BearerAuth{}}}
+
+goninja.Action{
+    Name: "publish", Method: http.MethodPost, UrlPath: "publish",
+    Handler: publishBookHandler(r),
+    Auth:    protected, // same RouteAuth shape as ResourceConfig.Auth's entries
+}
+```
+
+`Public`/`Auth` on the `RouteAuth` work exactly as they do for
+`ResourceConfig.Auth`. Leave `Auth` `nil` to fall back to the name-based
+lookup instead — useful when several actions already share the app-wide
+default and repeating it on each isn't worth avoiding the lookup.
+
+## Catching a route nobody classified: Config.StrictAuth
+
+Both mechanisms above are opt-in: a route (CRUD or Action) that's never
+mentioned in `DefaultAuth.Routes`, `ResourceConfig.Auth`, or `Action.Auth`
+is silently public by default — nobody decided that, it just fell through.
+`Config.StrictAuth: true` turns that into a startup panic instead, naming
+every route with no explicit decision:
+
+```go
+cfg := goninja.Config{
+    StrictAuth: true,
+    DefaultAuth: goninja.AuthPolicy{ /* ... */ },
+}
+app.MountWithConfig(mux, cfg, resources...) // panics if anything's unclassified
+```
+
+A route deliberately left public still needs one explicit line —
+`RouteAuth{Public: true}` (in `ResourceConfig.Auth` or `Action.Auth`) or
+naming it in `DefaultAuth.Routes` — `StrictAuth` doesn't require
+protecting everything, only *deciding* about everything. `false` (the
+default) changes nothing: existing apps see no behavior difference unless
+they opt in.
+
 ## Built-in Authenticators
 
 Writing `Name()`/`SecurityScheme()`/`Authenticate` by hand for a common

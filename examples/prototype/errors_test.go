@@ -22,8 +22,7 @@ import (
 func TestAppSetErrorMapper_MapsAlreadyCompletedAppWide(t *testing.T) {
 	db := goninjatest.NewDB(t, &models.Task{})
 
-	taskAPI := api.NewTaskResource(db)
-	taskAPI.SetActions(taskActions(taskAPI)...)
+	taskAPI := api.NewTaskResource(db, goninja.Actions(taskActions, (*goninja.RouteAuth)(nil)))
 
 	app := goninja.NewAPI("test", "0.0.0")
 	app.SetErrorMapper(appErrorMappings()...)

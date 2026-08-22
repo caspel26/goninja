@@ -25,7 +25,11 @@ For `book_generated.go`, the top-level declarations appear in this order:
 - A const block
 - Functions: `toBookList`, `toBookRetrieve`
 - Type: `BookResource` (embeds `goninja.BaseResource`)
-- Function: `NewBookResource`
+- Type: `BookOption` (a `func(*BookResource)`, applied by `NewBookResource`
+  — build one with `goninja.Actions` to attach actions at construction)
+- Function: `NewBookResource` (`func(db *gorm.DB, opts ...BookOption)
+  *BookResource` — variadic, so `NewBookResource(db)` with no options
+  still works unchanged)
 - Interface: `BookOps`
 - Methods: `ops`, `List`, `Retrieve`, `Create`, `Update`, `Delete`
 - Function: `parseBookFilters`

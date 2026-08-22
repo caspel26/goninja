@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caspel26/goninja/openapi"
@@ -288,6 +289,214 @@ func TestBaseResource_SecurityFor(t *testing.T) {
 			t.Errorf("SecurityFor with no Authenticators = %v, %v, want nil, nil", reqs, schemes)
 		}
 	})
+}
+
+func TestBaseResource_ProtectAction(t *testing.T) {
+	var authRan, globalRan bool
+	auth := &fakeAuthenticator{name: "test", allow: true, authRan: &authRan}
+	globalMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			globalRan = true
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	var r BaseResource
+	r.SetConfig(Config{
+		DefaultAuth: AuthPolicy{
+			Routes: []Route{Route("close")},
+			Auth:   []Authenticator{auth},
+		},
+		Middleware: []func(http.Handler) http.Handler{globalMW},
+	})
+
+	handler := func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) }
+
+	t.Run("nil Auth falls back to the Route(Name) lookup", func(t *testing.T) {
+		authRan, globalRan = false, false
+		h := r.ProtectAction(Action{Name: "close", Handler: handler}, ResourceConfig{})
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if !authRan || !globalRan {
+			t.Errorf("authRan=%v globalRan=%v, want both true (close is in DefaultAuth.Routes)", authRan, globalRan)
+		}
+	})
+
+	t.Run("nil Auth on an action not in DefaultAuth.Routes stays public", func(t *testing.T) {
+		authRan, globalRan = false, false
+		h := r.ProtectAction(Action{Name: "preview", Handler: handler}, ResourceConfig{})
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if authRan {
+			t.Error("authRan = true for an action absent from DefaultAuth.Routes and ResourceConfig.Auth, want false")
+		}
+		if !globalRan {
+			t.Error("globalRan = false, want true (global middleware still runs)")
+		}
+	})
+}
+
+// TestBaseResource_ProtectAction_ExplicitAuth covers Action.Auth's own
+// override cases, split from TestBaseResource_ProtectAction (the nil-Auth
+// fallback cases) to keep cognitive complexity in check — same reason
+// TestBaseResource_Protect is split from
+// TestBaseResource_Protect_ResourceConfigOverrides above.
+func TestBaseResource_ProtectAction_ExplicitAuth(t *testing.T) {
+	var authRan, globalRan bool
+	auth := &fakeAuthenticator{name: "test", allow: true, authRan: &authRan}
+	globalMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			globalRan = true
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	var r BaseResource
+	r.SetConfig(Config{
+		DefaultAuth: AuthPolicy{
+			Routes: []Route{Route("close")},
+			Auth:   []Authenticator{auth},
+		},
+		Middleware: []func(http.Handler) http.Handler{globalMW},
+	})
+
+	handler := func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) }
+
+	t.Run("explicit Auth protects an action absent from DefaultAuth.Routes", func(t *testing.T) {
+		authRan, globalRan = false, false
+		var ownAuthRan bool
+		own := &fakeAuthenticator{name: "own", allow: true, authRan: &ownAuthRan}
+		a := Action{Name: "preview", Handler: handler, Auth: &RouteAuth{Auth: []Authenticator{own}}}
+		h := r.ProtectAction(a, ResourceConfig{})
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if authRan {
+			t.Error("authRan = true, want the action's own Auth used instead of the default")
+		}
+		if !ownAuthRan {
+			t.Error("the action's own Authenticator did not run")
+		}
+	})
+
+	t.Run("explicit Public overrides an action that's otherwise in DefaultAuth.Routes", func(t *testing.T) {
+		authRan, globalRan = false, false
+		a := Action{Name: "close", Handler: handler, Auth: &RouteAuth{Public: true}}
+		h := r.ProtectAction(a, ResourceConfig{})
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if authRan {
+			t.Error("authRan = true for an action marked Public via its own Auth, want false")
+		}
+		if !globalRan {
+			t.Error("globalRan = false, want true (global middleware still runs on a public route)")
+		}
+	})
+
+	t.Run("empty Auth opts into Config.DefaultAuth.Auth", func(t *testing.T) {
+		authRan, globalRan = false, false
+		a := Action{Name: "preview", Handler: handler, Auth: &RouteAuth{}}
+		h := r.ProtectAction(a, ResourceConfig{})
+		h(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+		if !authRan {
+			t.Error("authRan = false for an action with an empty Auth override, want true (opts into DefaultAuth.Auth)")
+		}
+	})
+}
+
+func TestBaseResource_SecurityForAction(t *testing.T) {
+	auth := &fakeAuthenticator{name: "test", allow: true}
+	var r BaseResource
+	r.SetConfig(Config{DefaultAuth: AuthPolicy{Routes: []Route{Route("close")}, Auth: []Authenticator{auth}}})
+
+	t.Run("nil Auth documents via the Route(Name) lookup", func(t *testing.T) {
+		reqs, schemes := r.SecurityForAction(Action{Name: "close"}, ResourceConfig{})
+		if len(reqs) != 1 || len(reqs[0]["test"]) != 0 {
+			t.Errorf("reqs = %+v, want one entry for %q", reqs, "test")
+		}
+		if _, ok := schemes["test"]; !ok {
+			t.Errorf("schemes = %+v, want an entry for %q", schemes, "test")
+		}
+	})
+
+	t.Run("explicit Auth documents the action's own Authenticator", func(t *testing.T) {
+		own := &fakeAuthenticator{name: "own", allow: true}
+		reqs, schemes := r.SecurityForAction(Action{Name: "preview", Auth: &RouteAuth{Auth: []Authenticator{own}}}, ResourceConfig{})
+		if len(reqs) != 1 || len(reqs[0]["own"]) != 0 {
+			t.Errorf("reqs = %+v, want one entry for %q", reqs, "own")
+		}
+		if _, ok := schemes["own"]; !ok {
+			t.Errorf("schemes = %+v, want an entry for %q", schemes, "own")
+		}
+	})
+
+	t.Run("explicit Public returns nil", func(t *testing.T) {
+		reqs, schemes := r.SecurityForAction(Action{Name: "close", Auth: &RouteAuth{Public: true}}, ResourceConfig{})
+		if reqs != nil || schemes != nil {
+			t.Errorf("SecurityForAction with Public Auth = %v, %v, want nil, nil", reqs, schemes)
+		}
+	})
+}
+
+func TestBaseResource_CheckStrictAuth_NoopWhenDisabled(t *testing.T) {
+	var r BaseResource
+	r.SetConfig(Config{StrictAuth: false})
+	// A totally unclassified route/action would panic if StrictAuth were
+	// on; false must not, even with nothing else configured.
+	r.CheckStrictAuth([]Route{RouteDelete}, []Action{{Name: "wipe"}}, ResourceConfig{})
+}
+
+func TestBaseResource_CheckStrictAuth_PanicsOnUnclassifiedRoute(t *testing.T) {
+	var r BaseResource
+	r.SetConfig(Config{StrictAuth: true})
+
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatal("CheckStrictAuth did not panic for an unclassified route")
+		}
+		msg, ok := rec.(string)
+		if !ok || !strings.Contains(msg, "delete") {
+			t.Errorf("panic message = %v, want it to mention the unclassified route %q", rec, "delete")
+		}
+	}()
+	r.CheckStrictAuth([]Route{RouteDelete}, nil, ResourceConfig{})
+}
+
+func TestBaseResource_CheckStrictAuth_PanicsOnUnclassifiedAction(t *testing.T) {
+	var r BaseResource
+	r.SetConfig(Config{StrictAuth: true})
+
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatal("CheckStrictAuth did not panic for an unclassified action")
+		}
+		msg, ok := rec.(string)
+		if !ok || !strings.Contains(msg, "escalate") {
+			t.Errorf("panic message = %v, want it to mention the unclassified action %q", rec, "escalate")
+		}
+	}()
+	r.CheckStrictAuth(nil, []Action{{Name: "escalate"}}, ResourceConfig{})
+}
+
+func TestBaseResource_CheckStrictAuth_PassesWhenEveryRouteIsClassified(t *testing.T) {
+	var r BaseResource
+	r.SetConfig(Config{
+		StrictAuth:  true,
+		DefaultAuth: AuthPolicy{Routes: []Route{RouteList}},
+	})
+	rc := ResourceConfig{Auth: map[Route]RouteAuth{RouteDelete: {Public: true}}}
+
+	// RouteList: named in DefaultAuth.Routes. RouteDelete: explicit
+	// Public in ResourceConfig.Auth. "close": explicit Action.Auth.
+	// "preview": Public via ResourceConfig.Auth under its own Route name.
+	// None of these should panic — every one has an explicit decision,
+	// public or protected doesn't matter.
+	rc.Auth[Route("preview")] = RouteAuth{Public: true}
+	r.CheckStrictAuth(
+		[]Route{RouteList, RouteDelete},
+		[]Action{
+			{Name: "close", Auth: &RouteAuth{Public: true}},
+			{Name: "preview"},
+		},
+		rc,
+	)
 }
 
 func TestRequireAuth_TriesEachAuthenticatorInOrder(t *testing.T) {

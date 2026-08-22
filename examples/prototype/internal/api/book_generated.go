@@ -145,11 +145,23 @@ type BookResource struct {
 	goninja.BaseResource
 }
 
-// NewBookResource builds a BookResource bound to db.
-func NewBookResource(db *gorm.DB) *BookResource {
+// BookOption configures a BookResource at
+// construction time — see NewBookResource. Build one with
+// goninja.Actions to attach custom Actions right at construction, e.g.
+// NewBookResource(db, goninja.Actions(build, arg)).
+type BookOption func(*BookResource)
+
+// NewBookResource builds a BookResource bound to db,
+// applying opts in order — see BookOption. Safe to call with no
+// opts at all; existing callers that never pass any keep working
+// unchanged.
+func NewBookResource(db *gorm.DB, opts ...BookOption) *BookResource {
 	r := &BookResource{}
 	r.SetDB(db)
 	r.SetSelf(r)
+	for _, opt := range opts {
+		opt(r)
+	}
 	return r
 }
 
@@ -619,6 +631,17 @@ func (r *BookResource) openAPISecurity(route goninja.Route, cfg goninja.Resource
 	return reqs
 }
 
+// openAPISecurityAction is openAPISecurity for an Action — via
+// r.SecurityForAction, so a's own Auth (if set) is what gets documented,
+// same as r.ProtectAction is what actually enforces it.
+func (r *BookResource) openAPISecurityAction(a goninja.Action, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
+	reqs, s := r.SecurityForAction(a, cfg)
+	for name, scheme := range s {
+		schemes[name] = scheme
+	}
+	return reqs
+}
+
 // openAPIBasePathItem builds the list/create *openapi.PathItem for
 // "books" (nil if neither route is enabled) — split out of
 // OpenAPI() to keep its cognitive complexity in check.
@@ -742,7 +765,7 @@ func (r *BookResource) openAPIActionPaths(paths map[string]*openapi.PathItem, ba
 			item = &openapi.PathItem{}
 			paths[p] = item
 		}
-		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses, Security: r.openAPISecurity(goninja.Route(a.Name), cfg, schemes)}
+		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses, Security: r.openAPISecurityAction(a, cfg, schemes)}
 		if a.Detail {
 			op.Parameters = []openapi.Parameter{idParam}
 		}
@@ -780,11 +803,14 @@ func (r *BookResource) resourceConfig() goninja.ResourceConfig {
 // Auth override (ResourceConfig.Auth, keyed by Route); a resource mounted
 // via plain API.Mount has a zero Config, so Protect is a no-op there.
 // Every Action declared via SetActions is mounted last, on the same mux,
-// at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath.
+// at <path>[/{id}][/UrlPath] depending on its Detail/UrlPath, wrapped
+// through r.ProtectAction instead (consults Action.Auth first). Before
+// mounting anything, r.CheckStrictAuth panics if Config.StrictAuth is set
+// and any route below has no explicit auth decision — a no-op otherwise.
 func (r *BookResource) Register(mux goninja.Router) {
 	cfg := r.resourceConfig()
 	path := cfg.PathOr("/books")
-	for _, rt := range [...]struct {
+	crudRoutes := [...]struct {
 		route   goninja.Route
 		method  string
 		path    string
@@ -795,7 +821,15 @@ func (r *BookResource) Register(mux goninja.Router) {
 		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
 		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
 		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
-	} {
+	}
+	var enabledRoutes []goninja.Route
+	for _, rt := range crudRoutes {
+		if cfg.RouteEnabled(rt.route) {
+			enabledRoutes = append(enabledRoutes, rt.route)
+		}
+	}
+	r.CheckStrictAuth(enabledRoutes, r.Actions(), cfg)
+	for _, rt := range crudRoutes {
 		if cfg.RouteEnabled(rt.route) {
 			mux.HandleFunc(rt.method+" "+rt.path, r.Protect(rt.route, cfg, rt.handler))
 		}
@@ -808,6 +842,6 @@ func (r *BookResource) Register(mux goninja.Router) {
 		if a.UrlPath != "" {
 			p += "/" + a.UrlPath
 		}
-		mux.HandleFunc(a.Method+" "+p, r.Protect(goninja.Route(a.Name), cfg, a.Handler))
+		mux.HandleFunc(a.Method+" "+p, r.ProtectAction(a, cfg))
 	}
 }
