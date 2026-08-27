@@ -13,6 +13,47 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenAPI construction moved out of generated code into `goninja.BuildResourceOpenAPI`** — `resource_openapi.go` (new), `internal/codegen/templates/model.go.tmpl`
+
+  Every generated file carried ~165 lines building its own OpenAPI paths,
+  operations, list envelope, id parameter and per-route security — code
+  where only the strings differed between models. That contradicted the
+  architecture the rest of the runtime already follows: a generated
+  handler calls `RespondJSON`/`Validate` rather than carrying a copy, so a
+  fix lands once instead of per model.
+
+  Generated `OpenAPI()` now passes the genuinely per-model half — the
+  List/Retrieve/Create/Update schemas and the `filter`-derived query
+  parameters — as a `goninja.ResourceDoc`, and the shared structure lives
+  in the runtime. **A generated file drops ~25%** (the prototype's three
+  models: 2362 → 1780 lines). Verified behaviour-preserving by diffing the
+  full generated OpenAPI document before and after: byte-identical except
+  the intended grammar fix below.
+
+  The tradeoff, stated plainly: OpenAPI construction is no longer readable
+  in your own repo. It runs once at mount rather than per request, and the
+  whole request path stays generated and inspectable, so this doesn't
+  touch the "read the code that serves your API" guarantee — but it is
+  less code you can read locally.
+
+- **`Register` and the OpenAPI document now share `goninja.ActionPath`** — `resource_openapi.go`
+
+  Both computed an Action's mount path independently (`<base>`, plus
+  `/{id}` when `Detail`, plus `UrlPath`). They now call one function, so a
+  route's mounted path and its documented path can't drift apart.
+
+### Fixed
+
+- **Operation summaries read "Create an author", not "Create a author"** — `resource_openapi.go`
+
+  The generated summary hardcoded `"a "`. Now chosen from the model name,
+  including the "u"-sounds-like-"you" cases so the most common model name
+  of all reads "Create a user" rather than "Create an user". Fixing it in
+  the runtime means it lands for existing generated code on the next
+  regeneration, rather than being baked into every consumer's files.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

@@ -160,8 +160,13 @@ func TestGenerate_HasManyRelation(t *testing.T) {
 	}
 }
 
-// TestGenerate_ActionsDispatch confirms Register and OpenAPI mount/document
-// every Action returned by r.Actions() (set via SetActions).
+// TestGenerate_ActionsDispatch confirms Register mounts every Action
+// returned by r.Actions() (set via SetActions), and that OpenAPI()
+// delegates documenting them to goninja.BuildResourceOpenAPI. Documenting
+// an Action used to be generated per model; it now lives in the runtime,
+// so the behavioral coverage for it is
+// TestBuildResourceOpenAPI_DocumentsActions in the root package — this
+// test only pins that the generated code still routes through it.
 func TestGenerate_ActionsDispatch(t *testing.T) {
 	models := []Model{
 		{
@@ -187,7 +192,7 @@ func TestGenerate_ActionsDispatch(t *testing.T) {
 	for _, want := range []string{
 		"for _, a := range r.Actions() {",
 		"r.ProtectAction(a, cfg)",
-		"a.Summary",
+		"goninja.BuildResourceOpenAPI(&r.BaseResource,",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
