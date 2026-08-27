@@ -160,8 +160,13 @@ func TestGenerate_HasManyRelation(t *testing.T) {
 	}
 }
 
-// TestGenerate_ActionsDispatch confirms Register and OpenAPI mount/document
-// every Action returned by r.Actions() (set via SetActions).
+// TestGenerate_ActionsDispatch confirms Register mounts every Action
+// returned by r.Actions() (set via SetActions), and that OpenAPI()
+// delegates documenting them to goninja.BuildResourceOpenAPI. Documenting
+// an Action used to be generated per model; it now lives in the runtime,
+// so the behavioral coverage for it is
+// TestBuildResourceOpenAPI_DocumentsActions in the root package — this
+// test only pins that the generated code still routes through it.
 func TestGenerate_ActionsDispatch(t *testing.T) {
 	models := []Model{
 		{
@@ -187,7 +192,7 @@ func TestGenerate_ActionsDispatch(t *testing.T) {
 	for _, want := range []string{
 		"for _, a := range r.Actions() {",
 		"r.ProtectAction(a, cfg)",
-		"a.Summary",
+		"goninja.BuildResourceOpenAPI(&r.BaseResource,",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
@@ -348,10 +353,6 @@ func TestRenderFile_WriteError(t *testing.T) {
 	}
 }
 
-// TestGenerate_FiltersAndUUID asserts a `filter`-tagged field must produce a
-// working Filters struct/query, and a string-typed ID field (a UUID
-// primary key, per Model.IDGoType) must generate without falling back to
-// the historical int64 assumption.
 // TestGenerate_TimeFilterCompiles is a regression test for a real bug
 // found via examples/prototype/models/book.go's Book.CreatedAt: a
 // `filter`-tagged time.Time field fell through parse<Model>Filters'
@@ -450,6 +451,76 @@ func TestGenerate_EveryScalarFilterTypeCompiles(t *testing.T) {
 		modelFieldsSrc.WriteString(fmt.Sprintf("\t%s %s `json:%q`\n", name, gt, json))
 	}
 	models := []Model{{Name: "Everything", Fields: fields}}
+	modelsSrc := "package models\n\nimport \"time\"\n\nvar _ = time.Time{}\n\ntype Everything struct {\n" +
+		modelFieldsSrc.String() + "}\n"
+
+	compileGenerated(t, repoRoot, models, "everything.go", modelsSrc)
+}
+
+// TestGenerate_EachScalarFilterTypeCompilesAlone is the per-type
+// counterpart to TestGenerate_EveryScalarFilterTypeCompiles above, and
+// exists because that all-types-in-one-model test provably misses a whole
+// class of bug: an import the generated file declares but doesn't use.
+// With every type present, some field always justifies every import —
+// bool/int/float fields make "strconv" legitimately used, so a
+// time.Time-only model wrongly importing it is invisible there. That
+// exact bug shipped in v0.5.0 (Model.NeedsStrconv still counted a
+// time.Time filter field as needing strconv after the time.Parse fix
+// removed its only strconv use) and was found by an external consumer
+// project, not here. One model per type, each compiled alone, is what
+// actually pins import correctness.
+func TestGenerate_EachScalarFilterTypeCompilesAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles a real temp module per type; skipped in -short")
+	}
+
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scalarTypes := []string{
+		"string", "bool",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64",
+		"byte", "rune",
+		"time.Time",
+	}
+
+	for _, gt := range scalarTypes {
+		t.Run(gt, func(t *testing.T) {
+			t.Parallel()
+			models := []Model{
+				{
+					Name: "Solo",
+					Fields: []Field{
+						{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+						{
+							Name: "Field", GoType: gt, JSONName: "field",
+							Tags: []string{"list", "retrieve", "create", "update", "filter"},
+						},
+					},
+				},
+			}
+			modelsSrc := fmt.Sprintf(
+				"package models\n\nimport \"time\"\n\nvar _ = time.Time{}\n\ntype Solo struct {\n"+
+					"\tID string `json:\"id\"`\n\tField %s `json:\"field\"`\n}\n", gt)
+
+			compileGenerated(t, repoRoot, models, "solo.go", modelsSrc)
+		})
+	}
+}
+
+// compileGenerated generates models into a throwaway module (wired to this
+// repo by a local replace — testing the engine against itself, not
+// simulating an external consumer the way examples/prototype does) and
+// runs a real `go build` over the result. go/format.Source, which
+// generate.go already runs, only formats syntax — it neither type-checks
+// nor rejects an unused import, so an actual compile is the only thing
+// that pins either.
+func compileGenerated(t *testing.T, repoRoot string, models []Model, modelsFile, modelsSrc string) {
+	t.Helper()
 
 	tmp := t.TempDir()
 	modelsDir := filepath.Join(tmp, "models")
@@ -457,10 +528,7 @@ func TestGenerate_EveryScalarFilterTypeCompiles(t *testing.T) {
 	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	modelsSrc := "package models\n\nimport \"time\"\n\nvar _ = time.Time{}\n\ntype Everything struct {\n" +
-		modelFieldsSrc.String() + "}\n"
-	if err := os.WriteFile(filepath.Join(modelsDir, "everything.go"), []byte(modelsSrc), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(modelsDir, modelsFile), []byte(modelsSrc), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

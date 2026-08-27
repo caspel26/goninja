@@ -13,6 +13,99 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Added
+
+- **`List` now selects only the `<Model>List` columns, not `SELECT *`** — `internal/codegen/ir.go`, `internal/codegen/templates/model.go.tmpl`
+
+  A generated `List` query read every column of every row via a plain
+  `Find(&items)`, then discarded whatever `<Model>List` doesn't carry once
+  scanning it into the DB-shaped struct — on a model with a large
+  `retrieve`-only field (a bio, a body, a blob), real per-request I/O
+  spent reading data the response never contains. `Model.ListSelectColumns`
+  derives the `list`-tagged column list at generation time; the generated
+  file gets a `<model>ListColumns` whitelist and `List`'s query becomes
+  `q.Select(<model>ListColumns).Limit(...).Offset(...).Find(&items)`.
+  Applied after `Count`, so `total` still reflects `COUNT(*)` over every
+  matching row, unaffected by the narrower `Select`.
+
+  Skipped (falling back to the original `SELECT *`) when a `list`-tagged
+  field is itself a relation, since a relation isn't a column and can't be
+  named in a `SELECT` — `List` never preloads relations regardless (see
+  Phase 0's list/retrieve split), so that field is already empty in a list
+  response either way; the fallback only avoids emitting a broken query.
+  Verified with a real `gorm` query-logger capture over `AuthorResource`
+  (`examples/prototype/list_select_test.go`): the emitted `SELECT` names
+  only `id, name, created_at`, never `bio` (`AuthorRetrieve`-only), and the
+  `COUNT` query is unaffected.
+
+### Changed
+
+- **OpenAPI construction moved out of generated code into `goninja.BuildResourceOpenAPI`** — `resource_openapi.go` (new), `internal/codegen/templates/model.go.tmpl`
+
+  Every generated file carried ~165 lines building its own OpenAPI paths,
+  operations, list envelope, id parameter and per-route security — code
+  where only the strings differed between models. That contradicted the
+  architecture the rest of the runtime already follows: a generated
+  handler calls `RespondJSON`/`Validate` rather than carrying a copy, so a
+  fix lands once instead of per model.
+
+  Generated `OpenAPI()` now passes the genuinely per-model half — the
+  List/Retrieve/Create/Update schemas and the `filter`-derived query
+  parameters — as a `goninja.ResourceDoc`, and the shared structure lives
+  in the runtime. **A generated file drops ~25%** (the prototype's three
+  models: 2362 → 1780 lines). Verified behaviour-preserving by diffing the
+  full generated OpenAPI document before and after: byte-identical except
+  the intended grammar fix below.
+
+  The tradeoff, stated plainly: OpenAPI construction is no longer readable
+  in your own repo. It runs once at mount rather than per request, and the
+  whole request path stays generated and inspectable, so this doesn't
+  touch the "read the code that serves your API" guarantee — but it is
+  less code you can read locally.
+
+- **`Register` and the OpenAPI document now share `goninja.ActionPath`** — `resource_openapi.go`
+
+  Both computed an Action's mount path independently (`<base>`, plus
+  `/{id}` when `Detail`, plus `UrlPath`). They now call one function, so a
+  route's mounted path and its documented path can't drift apart.
+
+### Fixed
+
+- **Operation summaries read "Create an author", not "Create a author"** — `resource_openapi.go`
+
+  The generated summary hardcoded `"a "`. Now chosen from the model name,
+  including the "u"-sounds-like-"you" cases so the most common model name
+  of all reads "Create a user" rather than "Create an user". Fixing it in
+  the runtime means it lands for existing generated code on the next
+  regeneration, rather than being baked into every consumer's files.
+
+- **A `time.Time` `filter` field made the generated file import `"strconv"` without using it** — `internal/codegen/ir.go`
+
+  A regression introduced by v0.5.0's own `time.Time` filter fix.
+  `Model.NeedsStrconv` counted every non-string `filter` field as needing
+  `"strconv"` — correct before that fix, when anything not
+  bool/string/float fell through to a `strconv.ParseInt` branch, but a
+  `time.Time` field now parses with `time.Parse` and never touches
+  `strconv`. A model whose only non-string `filter` field is a
+  `time.Time` therefore imported it and never used it: `"strconv"
+  imported and not used`, a hard compile error. Found by the same
+  external consumer project that reported the v0.5.0 bug this fix
+  introduced.
+
+  `TestGenerate_EveryScalarFilterTypeCompiles`, added in v0.5.0 to catch
+  exactly this class of bug, provably could not: it puts every scalar
+  type in one model, so bool/int/float fields always make `"strconv"`
+  legitimately used and mask the unused-import case. The new
+  `TestGenerate_EachScalarFilterTypeCompilesAlone` compiles one model per
+  type in isolation, which is what actually pins import correctness —
+  verified by reverting the fix and confirming the per-type test fails on
+  the exact error while the all-types one still passes.
+  `examples/prototype/models/author.go`'s `CreatedAt` is now permanently
+  `filter`-tagged as the end-to-end proof (`Author` has only `string`
+  filters otherwise, so it reproduces the shape; `Book` can't — its
+  float/bool filters mask it), with `author_resource_test.go` covering
+  the runtime half over real HTTP.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

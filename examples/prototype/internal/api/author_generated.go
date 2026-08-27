@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
@@ -20,8 +21,9 @@ import (
 // AuthorList is the shape returned by GET /authors,
 // one item per row of the "items" field of goninja.ListEnvelope.
 type AuthorList struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // AuthorRetrieve is the shape returned by GET /authors/{id}.
@@ -32,10 +34,11 @@ type AuthorList struct {
 // "byid" instead exposes only the related model's ID,
 // as "<field>_id" — no nesting, no Preload.
 type AuthorRetrieve struct {
-	ID    string         `json:"id"`
-	Name  string         `json:"name"`
-	Bio   string         `json:"bio"`
-	Books []BookRetrieve `json:"books"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Bio       string         `json:"bio"`
+	CreatedAt time.Time      `json:"created_at"`
+	Books     []BookRetrieve `json:"books"`
 }
 
 // AuthorCreate is the shape accepted by POST /authors.
@@ -60,9 +63,10 @@ type AuthorUpdate struct {
 // field means "no filter" — List only adds a WHERE clause for the ones the
 // caller actually set.
 type AuthorFilters struct {
-	Name   *string
-	Limit  int
-	Offset int
+	Name      *string
+	CreatedAt *time.Time
+	Limit     int
+	Offset    int
 	// Order is a list-field JSON name, optionally "-"-prefixed for
 	// descending (e.g. "-created_at"). Unknown field names are ignored.
 	Order string
@@ -73,9 +77,19 @@ type AuthorFilters struct {
 // (assumed to match the actual DB column, per this model's `json` tags).
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
+// authorListColumns are the columns List reads — one per
+// `list` field. Without this the query would SELECT *, loading columns
+// AuthorList doesn't carry just to discard them after scanning.
+var authorListColumns = []string{
+	"id",
+	"name",
+	"created_at",
+}
+
 var authorOrderableColumns = map[string]string{
-	"id":   "id",
-	"name": "name",
+	"id":         "id",
+	"name":       "name",
+	"created_at": "created_at",
 }
 
 // authorInvalidIDMsg/authorIDQuery/
@@ -95,16 +109,18 @@ const (
 
 func toAuthorList(m *models.Author) AuthorList {
 	return AuthorList{
-		ID:   m.ID,
-		Name: m.Name,
+		ID:        m.ID,
+		Name:      m.Name,
+		CreatedAt: m.CreatedAt,
 	}
 }
 
 func toAuthorRetrieve(m *models.Author) AuthorRetrieve {
 	return AuthorRetrieve{
-		ID:   m.ID,
-		Name: m.Name,
-		Bio:  m.Bio,
+		ID:        m.ID,
+		Name:      m.Name,
+		Bio:       m.Bio,
+		CreatedAt: m.CreatedAt,
 		Books: func() []BookRetrieve {
 			out := make([]BookRetrieve, 0, len(m.Books))
 			for i := range m.Books {
@@ -175,6 +191,9 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 	if f.Name != nil {
 		q = q.Where("name = ?", *f.Name)
 	}
+	if f.CreatedAt != nil {
+		q = q.Where("created_at = ?", *f.CreatedAt)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -193,7 +212,7 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 	}
 
 	var items []models.Author
-	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+	if err := q.Select(authorListColumns).Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	out := make([]AuthorList, 0, len(items))
@@ -279,6 +298,14 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 	if v := q.Get("name"); v != "" {
 		parsed := v
 		f.Name = &parsed
+	}
+
+	if v := q.Get("created_at"); v != "" {
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid created_at"}
+		}
+		f.CreatedAt = &parsed
 	}
 
 	limit, offset, err := goninja.ParseLimitOffset(q)
@@ -439,26 +466,23 @@ func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request)
 // (alongside its Register(mux) call) to merge it in, or just pass it to
 // API.Mount; see API.MountDocs.
 func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]openapi.Schema, map[string]openapi.SecurityScheme) {
-	tags := r.OpenAPITags()
-	if len(tags) == 0 {
-		tags = []string{"Author"}
-	}
-
 	schemas := map[string]openapi.Schema{
 		"AuthorList": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":   {Type: "string"},
-				"name": {Type: "string"},
+				"id":         {Type: "string"},
+				"name":       {Type: "string"},
+				"created_at": {Type: "string", Format: "date-time"},
 			},
 		},
 		"AuthorRetrieve": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":    {Type: "string"},
-				"name":  {Type: "string"},
-				"bio":   {Type: "string"},
-				"books": {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+				"id":         {Type: "string"},
+				"name":       {Type: "string"},
+				"bio":        {Type: "string"},
+				"created_at": {Type: "string", Format: "date-time"},
+				"books":      {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 			},
 		},
 		"AuthorCreate": {
@@ -477,210 +501,22 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 			},
 			Required: []string{"name"},
 		},
-		"AuthorListEnvelope": {
-			Type: "object",
-			Properties: map[string]openapi.Schema{
-				"items":  {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/AuthorList"}},
-				"total":  {Type: "integer", Format: "int64"},
-				"limit":  {Type: "integer"},
-				"offset": {Type: "integer"},
-			},
-		},
 	}
 
 	listParams := []openapi.Parameter{
 		{Name: "name", In: "query", Schema: openapi.Schema{Type: "string"}},
-		{Name: "limit", In: "query", Schema: openapi.Schema{Type: "integer"}},
-		{Name: "offset", In: "query", Schema: openapi.Schema{Type: "integer"}},
-		{Name: "order", In: "query", Schema: openapi.Schema{Type: "string"}},
+		{Name: "created_at", In: "query", Schema: openapi.Schema{Type: "string", Format: "date-time"}},
 	}
 
-	idParam := openapi.Parameter{
-		Name:     "id",
-		In:       "path",
-		Required: true,
-		Schema:   openapi.Schema{Type: "string"},
-	}
-
-	cfg := r.resourceConfig()
-	basePath := cfg.PathOr("/authors")
-	itemPath := basePath + "/{id}"
-
-	paths := map[string]*openapi.PathItem{}
-	securitySchemes := map[string]openapi.SecurityScheme{}
-
-	if item := r.openAPIBasePathItem(cfg, tags, listParams, securitySchemes); item != nil {
-		paths[basePath] = item
-	}
-	if item := r.openAPIItemPathItem(cfg, tags, idParam, securitySchemes); item != nil {
-		paths[itemPath] = item
-	}
-	r.openAPIActionPaths(paths, basePath, idParam, tags, cfg, securitySchemes)
-
-	return paths, schemas, securitySchemes
-}
-
-// openAPISecurity resolves route's Security requirement via r.SecurityFor
-// and, if non-nil, merges its referenced SecurityScheme(s) into schemes —
-// shared by every op builder below so each documents exactly what
-// r.Protect enforces for that route.
-func (r *AuthorResource) openAPISecurity(route goninja.Route, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
-	reqs, s := r.SecurityFor(route, cfg)
-	for name, scheme := range s {
-		schemes[name] = scheme
-	}
-	return reqs
-}
-
-// openAPISecurityAction is openAPISecurity for an Action — via
-// r.SecurityForAction, so a's own Auth (if set) is what gets documented,
-// same as r.ProtectAction is what actually enforces it.
-func (r *AuthorResource) openAPISecurityAction(a goninja.Action, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) []map[string][]string {
-	reqs, s := r.SecurityForAction(a, cfg)
-	for name, scheme := range s {
-		schemes[name] = scheme
-	}
-	return reqs
-}
-
-// openAPIBasePathItem builds the list/create *openapi.PathItem for
-// "authors" (nil if neither route is enabled) — split out of
-// OpenAPI() to keep its cognitive complexity in check.
-func (r *AuthorResource) openAPIBasePathItem(cfg goninja.ResourceConfig, tags []string, listParams []openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
-	item := &openapi.PathItem{}
-	if cfg.RouteEnabled(goninja.RouteList) {
-		item.Get = &openapi.Operation{
-			Summary:    "List authors",
-			Tags:       tags,
-			Parameters: listParams,
-			Security:   r.openAPISecurity(goninja.RouteList, cfg, schemes),
-			Responses: map[string]openapi.Response{
-				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorListEnvelope"}},
-				}},
-			},
-		}
-	}
-	if cfg.RouteEnabled(goninja.RouteCreate) {
-		item.Post = &openapi.Operation{
-			Summary:  "Create a author",
-			Tags:     tags,
-			Security: r.openAPISecurity(goninja.RouteCreate, cfg, schemes),
-			RequestBody: &openapi.RequestBody{
-				Required: true,
-				Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorCreate"}},
-				},
-			},
-			Responses: map[string]openapi.Response{
-				"201": {Description: "Created", Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: authorRetrieveRef}},
-				}},
-				"422": {Description: "Validation error"},
-			},
-		}
-	}
-	if item.Get == nil && item.Post == nil {
-		return nil
-	}
-	return item
-}
-
-// openAPIItemPathItem builds the retrieve/update/delete *openapi.PathItem
-// for "authors/{id}" (nil if none of the three routes is
-// enabled) — split out of OpenAPI() to keep its cognitive complexity in
-// check.
-func (r *AuthorResource) openAPIItemPathItem(cfg goninja.ResourceConfig, tags []string, idParam openapi.Parameter, schemes map[string]openapi.SecurityScheme) *openapi.PathItem {
-	item := &openapi.PathItem{}
-	if cfg.RouteEnabled(goninja.RouteRetrieve) {
-		item.Get = &openapi.Operation{
-			Summary:    "Retrieve a author",
-			Tags:       tags,
-			Parameters: []openapi.Parameter{idParam},
-			Security:   r.openAPISecurity(goninja.RouteRetrieve, cfg, schemes),
-			Responses: map[string]openapi.Response{
-				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: authorRetrieveRef}},
-				}},
-				"404": {Description: authorNotFoundDesc},
-			},
-		}
-	}
-	if cfg.RouteEnabled(goninja.RouteUpdate) {
-		item.Put = &openapi.Operation{
-			Summary:    "Update a author",
-			Tags:       tags,
-			Parameters: []openapi.Parameter{idParam},
-			Security:   r.openAPISecurity(goninja.RouteUpdate, cfg, schemes),
-			RequestBody: &openapi.RequestBody{
-				Required: true,
-				Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: "#/components/schemas/AuthorUpdate"}},
-				},
-			},
-			Responses: map[string]openapi.Response{
-				"200": {Description: "OK", Content: map[string]openapi.MediaType{
-					authorContentTypeJSON: {Schema: openapi.Schema{Ref: authorRetrieveRef}},
-				}},
-				"404": {Description: authorNotFoundDesc},
-				"422": {Description: "Validation error"},
-			},
-		}
-	}
-	if cfg.RouteEnabled(goninja.RouteDelete) {
-		item.Delete = &openapi.Operation{
-			Summary:    "Delete a author",
-			Tags:       tags,
-			Parameters: []openapi.Parameter{idParam},
-			Security:   r.openAPISecurity(goninja.RouteDelete, cfg, schemes),
-			Responses: map[string]openapi.Response{
-				"204": {Description: "No content"},
-				"404": {Description: authorNotFoundDesc},
-			},
-		}
-	}
-	if item.Get == nil && item.Put == nil && item.Delete == nil {
-		return nil
-	}
-	return item
-}
-
-// openAPIActionPaths adds a path entry for every r.Actions() action that
-// carries a Summary, mounted the same way Register mounts it (base or
-// "/{id}"-suffixed, then UrlPath) — split out of OpenAPI() to keep its
-// cognitive complexity in check.
-func (r *AuthorResource) openAPIActionPaths(paths map[string]*openapi.PathItem, basePath string, idParam openapi.Parameter, tags []string, cfg goninja.ResourceConfig, schemes map[string]openapi.SecurityScheme) {
-	for _, a := range r.Actions() {
-		if a.Summary == "" {
-			continue
-		}
-		p := basePath
-		if a.Detail {
-			p += "/{id}"
-		}
-		if a.UrlPath != "" {
-			p += "/" + a.UrlPath
-		}
-		item, ok := paths[p]
-		if !ok {
-			item = &openapi.PathItem{}
-			paths[p] = item
-		}
-		op := &openapi.Operation{Summary: a.Summary, Tags: tags, Responses: a.Responses, Security: r.openAPISecurityAction(a, cfg, schemes)}
-		if a.Detail {
-			op.Parameters = []openapi.Parameter{idParam}
-		}
-		switch a.Method {
-		case http.MethodGet:
-			item.Get = op
-		case http.MethodPost:
-			item.Post = op
-		case http.MethodPut:
-			item.Put = op
-		case http.MethodDelete:
-			item.Delete = op
-		}
-	}
+	return goninja.BuildResourceOpenAPI(&r.BaseResource, r.resourceConfig(), goninja.ResourceDoc{
+		Name:      "Author",
+		NameLower: "author",
+		IDSchema: openapi.Schema{
+			Type: "string",
+		},
+		Schemas:    schemas,
+		ListParams: listParams,
+	})
 }
 
 // resourceConfig resolves r's ResourceConfig via r.Self(), the same
