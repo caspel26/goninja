@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/caspel26/goninja"
 	"github.com/caspel26/goninja/id"
@@ -20,8 +21,9 @@ import (
 // AuthorList is the shape returned by GET /authors,
 // one item per row of the "items" field of goninja.ListEnvelope.
 type AuthorList struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // AuthorRetrieve is the shape returned by GET /authors/{id}.
@@ -32,10 +34,11 @@ type AuthorList struct {
 // "byid" instead exposes only the related model's ID,
 // as "<field>_id" — no nesting, no Preload.
 type AuthorRetrieve struct {
-	ID    string         `json:"id"`
-	Name  string         `json:"name"`
-	Bio   string         `json:"bio"`
-	Books []BookRetrieve `json:"books"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Bio       string         `json:"bio"`
+	CreatedAt time.Time      `json:"created_at"`
+	Books     []BookRetrieve `json:"books"`
 }
 
 // AuthorCreate is the shape accepted by POST /authors.
@@ -60,9 +63,10 @@ type AuthorUpdate struct {
 // field means "no filter" — List only adds a WHERE clause for the ones the
 // caller actually set.
 type AuthorFilters struct {
-	Name   *string
-	Limit  int
-	Offset int
+	Name      *string
+	CreatedAt *time.Time
+	Limit     int
+	Offset    int
 	// Order is a list-field JSON name, optionally "-"-prefixed for
 	// descending (e.g. "-created_at"). Unknown field names are ignored.
 	Order string
@@ -74,8 +78,9 @@ type AuthorFilters struct {
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
 var authorOrderableColumns = map[string]string{
-	"id":   "id",
-	"name": "name",
+	"id":         "id",
+	"name":       "name",
+	"created_at": "created_at",
 }
 
 // authorInvalidIDMsg/authorIDQuery/
@@ -95,16 +100,18 @@ const (
 
 func toAuthorList(m *models.Author) AuthorList {
 	return AuthorList{
-		ID:   m.ID,
-		Name: m.Name,
+		ID:        m.ID,
+		Name:      m.Name,
+		CreatedAt: m.CreatedAt,
 	}
 }
 
 func toAuthorRetrieve(m *models.Author) AuthorRetrieve {
 	return AuthorRetrieve{
-		ID:   m.ID,
-		Name: m.Name,
-		Bio:  m.Bio,
+		ID:        m.ID,
+		Name:      m.Name,
+		Bio:       m.Bio,
+		CreatedAt: m.CreatedAt,
 		Books: func() []BookRetrieve {
 			out := make([]BookRetrieve, 0, len(m.Books))
 			for i := range m.Books {
@@ -174,6 +181,9 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 	q := r.DB(ctx).Model(&models.Author{})
 	if f.Name != nil {
 		q = q.Where("name = ?", *f.Name)
+	}
+	if f.CreatedAt != nil {
+		q = q.Where("created_at = ?", *f.CreatedAt)
 	}
 
 	var total int64
@@ -279,6 +289,14 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 	if v := q.Get("name"); v != "" {
 		parsed := v
 		f.Name = &parsed
+	}
+
+	if v := q.Get("created_at"); v != "" {
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return f, goninja.BadRequest{Detail: "invalid created_at"}
+		}
+		f.CreatedAt = &parsed
 	}
 
 	limit, offset, err := goninja.ParseLimitOffset(q)
@@ -443,17 +461,19 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 		"AuthorList": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":   {Type: "string"},
-				"name": {Type: "string"},
+				"id":         {Type: "string"},
+				"name":       {Type: "string"},
+				"created_at": {Type: "string", Format: "date-time"},
 			},
 		},
 		"AuthorRetrieve": {
 			Type: "object",
 			Properties: map[string]openapi.Schema{
-				"id":    {Type: "string"},
-				"name":  {Type: "string"},
-				"bio":   {Type: "string"},
-				"books": {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
+				"id":         {Type: "string"},
+				"name":       {Type: "string"},
+				"bio":        {Type: "string"},
+				"created_at": {Type: "string", Format: "date-time"},
+				"books":      {Type: "array", Items: &openapi.Schema{Ref: "#/components/schemas/BookRetrieve"}},
 			},
 		},
 		"AuthorCreate": {
@@ -476,6 +496,7 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 
 	listParams := []openapi.Parameter{
 		{Name: "name", In: "query", Schema: openapi.Schema{Type: "string"}},
+		{Name: "created_at", In: "query", Schema: openapi.Schema{Type: "string", Format: "date-time"}},
 	}
 
 	return goninja.BuildResourceOpenAPI(&r.BaseResource, r.resourceConfig(), goninja.ResourceDoc{

@@ -54,6 +54,33 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
   the runtime means it lands for existing generated code on the next
   regeneration, rather than being baked into every consumer's files.
 
+- **A `time.Time` `filter` field made the generated file import `"strconv"` without using it** — `internal/codegen/ir.go`
+
+  A regression introduced by v0.5.0's own `time.Time` filter fix.
+  `Model.NeedsStrconv` counted every non-string `filter` field as needing
+  `"strconv"` — correct before that fix, when anything not
+  bool/string/float fell through to a `strconv.ParseInt` branch, but a
+  `time.Time` field now parses with `time.Parse` and never touches
+  `strconv`. A model whose only non-string `filter` field is a
+  `time.Time` therefore imported it and never used it: `"strconv"
+  imported and not used`, a hard compile error. Found by the same
+  external consumer project that reported the v0.5.0 bug this fix
+  introduced.
+
+  `TestGenerate_EveryScalarFilterTypeCompiles`, added in v0.5.0 to catch
+  exactly this class of bug, provably could not: it puts every scalar
+  type in one model, so bool/int/float fields always make `"strconv"`
+  legitimately used and mask the unused-import case. The new
+  `TestGenerate_EachScalarFilterTypeCompilesAlone` compiles one model per
+  type in isolation, which is what actually pins import correctness —
+  verified by reverting the fix and confirming the per-type test fails on
+  the exact error while the all-types one still passes.
+  `examples/prototype/models/author.go`'s `CreatedAt` is now permanently
+  `filter`-tagged as the end-to-end proof (`Author` has only `string`
+  filters otherwise, so it reproduces the shape; `Book` can't — its
+  float/bool filters mask it), with `author_resource_test.go` covering
+  the runtime half over real HTTP.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

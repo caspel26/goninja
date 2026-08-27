@@ -258,14 +258,17 @@ func (m Model) UsesTime() bool {
 
 // NeedsStrconv reports whether the generated file has any use for the
 // "strconv" import: an int64 ID (path-value parsing) or a `filter` field
-// whose query-parameter parsing isn't a plain string passthrough (bool,
-// int, or float).
+// whose query-parameter parsing goes through strconv (bool, int, float).
+// A string filter field is a plain passthrough, and a time.Time one parses
+// with time.Parse (see model.go.tmpl) — neither touches strconv, so a
+// model whose only non-string filter field is a time.Time must not import
+// it.
 func (m Model) NeedsStrconv() bool {
 	if m.IDGoType() == "int64" {
 		return true
 	}
 	for _, f := range m.FilterFields() {
-		if !f.IsString() {
+		if !f.IsString() && f.GoType != goTypeTime {
 			return true
 		}
 	}
