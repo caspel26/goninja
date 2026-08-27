@@ -77,6 +77,15 @@ type AuthorFilters struct {
 // (assumed to match the actual DB column, per this model's `json` tags).
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
+// authorListColumns are the columns List reads — one per
+// `list` field. Without this the query would SELECT *, loading columns
+// AuthorList doesn't carry just to discard them after scanning.
+var authorListColumns = []string{
+	"id",
+	"name",
+	"created_at",
+}
+
 var authorOrderableColumns = map[string]string{
 	"id":         "id",
 	"name":       "name",
@@ -203,7 +212,7 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 	}
 
 	var items []models.Author
-	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+	if err := q.Select(authorListColumns).Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	out := make([]AuthorList, 0, len(items))

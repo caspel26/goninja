@@ -13,6 +13,31 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+### Added
+
+- **`List` now selects only the `<Model>List` columns, not `SELECT *`** — `internal/codegen/ir.go`, `internal/codegen/templates/model.go.tmpl`
+
+  A generated `List` query read every column of every row via a plain
+  `Find(&items)`, then discarded whatever `<Model>List` doesn't carry once
+  scanning it into the DB-shaped struct — on a model with a large
+  `retrieve`-only field (a bio, a body, a blob), real per-request I/O
+  spent reading data the response never contains. `Model.ListSelectColumns`
+  derives the `list`-tagged column list at generation time; the generated
+  file gets a `<model>ListColumns` whitelist and `List`'s query becomes
+  `q.Select(<model>ListColumns).Limit(...).Offset(...).Find(&items)`.
+  Applied after `Count`, so `total` still reflects `COUNT(*)` over every
+  matching row, unaffected by the narrower `Select`.
+
+  Skipped (falling back to the original `SELECT *`) when a `list`-tagged
+  field is itself a relation, since a relation isn't a column and can't be
+  named in a `SELECT` — `List` never preloads relations regardless (see
+  Phase 0's list/retrieve split), so that field is already empty in a list
+  response either way; the fallback only avoids emitting a broken query.
+  Verified with a real `gorm` query-logger capture over `AuthorResource`
+  (`examples/prototype/list_select_test.go`): the emitted `SELECT` names
+  only `id, name, created_at`, never `bio` (`AuthorRetrieve`-only), and the
+  `COUNT` query is unaffected.
+
 ### Changed
 
 - **OpenAPI construction moved out of generated code into `goninja.BuildResourceOpenAPI`** — `resource_openapi.go` (new), `internal/codegen/templates/model.go.tmpl`

@@ -105,6 +105,22 @@ Note the asymmetry: an over-limit `limit` is clamped without error, but a malfor
 
 `List` counts the total number of matching rows before applying `Limit`/`Offset`, so `total` in the response reflects the full filtered set, not just the returned page.
 
+## Column selection
+
+`List` only ever `SELECT`s the columns the `<Model>List` schema actually carries — one per `list`-tagged field, via a generated `<model>ListColumns` whitelist:
+
+```go {filename="internal/api/book_generated.go"}
+var bookListColumns = []string{"id", "title", "price", "published"}
+```
+
+```go
+q.Select(bookListColumns).Limit(f.Limit).Offset(f.Offset).Find(&items)
+```
+
+Without this, `List` would `SELECT *` and read every column of every row — including large `retrieve`-only fields (a bio, a body, a blob) — only to discard them once `<Model>List` drops what it doesn't carry. The `Count` query that runs before it is unaffected: `Select` is applied after counting, so `total` still reflects `COUNT(*)` over every matching row.
+
+The optimization is skipped (falling back to `SELECT *`) only when a `list`-tagged field is itself a relation — a relation isn't a column, so it can't be named in a `SELECT`. `List` never preloads relations anyway (see [Relations](../relations)), so that field is already empty in a list response either way; the fallback just avoids emitting a broken query, it doesn't change what the response contains.
+
 ## Response envelope
 
 List responses are wrapped in `goninja.ListEnvelope[T]`:

@@ -91,6 +91,18 @@ type BookFilters struct {
 // (assumed to match the actual DB column, per this model's `json` tags).
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
+// bookListColumns are the columns List reads — one per
+// `list` field. Without this the query would SELECT *, loading columns
+// BookList doesn't carry just to discard them after scanning.
+var bookListColumns = []string{
+	"id",
+	"title",
+	"author_id",
+	"price",
+	"published",
+	"created_at",
+}
+
 var bookOrderableColumns = map[string]string{
 	"id":         "id",
 	"title":      "title",
@@ -231,7 +243,7 @@ func (r *BookResource) List(ctx context.Context, f BookFilters) ([]BookList, int
 	}
 
 	var items []models.Book
-	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+	if err := q.Select(bookListColumns).Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	out := make([]BookList, 0, len(items))

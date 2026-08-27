@@ -204,6 +204,43 @@ func TestModel_FieldAccessors(t *testing.T) {
 	}
 }
 
+func TestModel_ListSelectColumns(t *testing.T) {
+	m := Model{
+		Name: "Author",
+		Fields: []Field{
+			{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+			{Name: "Name", GoType: "string", JSONName: "name", Tags: []string{"list", "retrieve"}},
+			{Name: "Bio", GoType: "string", JSONName: "bio", Tags: []string{"retrieve"}}, // list-excluded
+		},
+	}
+	got := m.ListSelectColumns()
+	want := []string{"id", "name"}
+	if len(got) != len(want) {
+		t.Fatalf("ListSelectColumns() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ListSelectColumns()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestModel_ListSelectColumns_NilOnRelationField(t *testing.T) {
+	// A `list`-tagged relation field isn't a column — a Select naming it
+	// would be a SQL error, so ListSelectColumns must bail out to nil
+	// (disabling the optimization) rather than emit a broken query.
+	m := Model{
+		Name: "Book",
+		Fields: []Field{
+			{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list"}},
+			{Name: "Author", GoType: "Author", JSONName: "author", Tags: []string{"list"}},
+		},
+	}
+	if got := m.ListSelectColumns(); got != nil {
+		t.Errorf("ListSelectColumns() with a relation field = %v, want nil", got)
+	}
+}
+
 func TestModel_IDGoType_DefaultsWithoutIDField(t *testing.T) {
 	m := Model{Name: "Weird", Fields: []Field{{Name: "Name", GoType: "string"}}}
 	if got := m.IDGoType(); got != "int64" {

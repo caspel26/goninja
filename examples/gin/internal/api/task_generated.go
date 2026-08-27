@@ -74,6 +74,15 @@ type TaskFilters struct {
 // (assumed to match the actual DB column, per this model's `json` tags).
 // Only ever indexed with a known key, never interpolated from user input
 // directly, so this doubles as the SQL-injection guard for ORDER BY.
+// taskListColumns are the columns List reads — one per
+// `list` field. Without this the query would SELECT *, loading columns
+// TaskList doesn't carry just to discard them after scanning.
+var taskListColumns = []string{
+	"id",
+	"title",
+	"done",
+}
+
 var taskOrderableColumns = map[string]string{
 	"id":    "id",
 	"title": "title",
@@ -189,7 +198,7 @@ func (r *TaskResource) List(ctx context.Context, f TaskFilters) ([]TaskList, int
 	}
 
 	var items []models.Task
-	if err := q.Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
+	if err := q.Select(taskListColumns).Limit(f.Limit).Offset(f.Offset).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	out := make([]TaskList, 0, len(items))

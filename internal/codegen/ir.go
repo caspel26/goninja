@@ -216,6 +216,31 @@ func (m Model) UpdateFields() []Field {
 	return m.fieldsWithTag("update")
 }
 
+// ListSelectColumns returns the columns a List query needs to read: one
+// per `list` field, by JSON name — the same "JSON name is the column
+// name" assumption <model>OrderableColumns already makes. Without this a
+// List does SELECT *, reading every column of every row and then
+// discarding whatever <Model>List doesn't carry, which on a model with a
+// large retrieve-only field (a bio, a body, a blob) is real per-request
+// I/O spent on data the response never contains.
+//
+// Returns nil when any `list` field is a relation, which disables the
+// Select entirely rather than emitting a broken query: a relation isn't a
+// column, so naming it in a SELECT is a SQL error. Such a field is
+// already empty in a list response — List never preloads, by design — so
+// keeping SELECT * for that case changes nothing about the output.
+func (m Model) ListSelectColumns() []string {
+	fields := m.ListFields()
+	cols := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f.IsRelation() {
+			return nil
+		}
+		cols = append(cols, f.JSONName)
+	}
+	return cols
+}
+
 // FilterFields returns the fields exposed on the generated <Model>Filters
 // struct and honored by List's query building.
 func (m Model) FilterFields() []Field {
