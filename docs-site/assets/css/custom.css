@@ -307,17 +307,14 @@ article.content,
 }
 
 .gn-wordmark-name {
-  color: transparent;
-  background: linear-gradient(95deg, hsl(194 65% 42%), hsl(274 62% 46%) 58%, hsl(276 66% 38%));
-  background-clip: text;
-  -webkit-background-clip: text;
+  color: var(--gn-text);
   font-size: 1.02rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-weight: 780;
+  letter-spacing: -0.03em;
 }
 
 .dark .gn-wordmark-name {
-  background-image: linear-gradient(95deg, hsl(194 76% 67%), hsl(276 78% 76%) 62%, hsl(276 72% 68%));
+  color: hsl(274 16% 94%);
 }
 
 .gn-wordmark-separator {
