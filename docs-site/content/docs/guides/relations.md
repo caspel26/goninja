@@ -22,3 +22,11 @@ Author Author `goninja:"retrieve,byid"` // {"author_id": "..."} — no nesting, 
 
 Useful when a caller only ever needs the reference, not the full related
 object, and the extra join/preload would be wasted work.
+
+## List and retrieve do different work
+
+{{< gn-diagram "views" >}}
+
+The distinction is generated into the output types and queries, not left to a
+runtime option. A `list` response cannot accidentally trigger one relation
+query per row; a `retrieve` response only preloads fields it actually exposes.

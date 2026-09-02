@@ -66,6 +66,15 @@ works exactly as before — a resource it mounts gets a zero `Config`, so
 nothing is protected and no middleware runs, unless you switch that
 resource to `api.MountWithConfig`.
 
+## Decision order
+
+{{< gn-diagram "policy" >}}
+
+The error-mapper side of the diagram is documented in full in
+[Errors & Responses](../errors/). `API.SetErrorMapper` supplies the app-wide
+default; an explicit config mapper or resource mapper deliberately takes
+precedence when a narrower scope needs different behavior.
+
 ## Auth on a custom Action
 
 `ResourceConfig.Auth` targets a route by name (`Route(action.Name)`) — a
