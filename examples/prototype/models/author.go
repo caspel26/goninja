@@ -22,6 +22,6 @@ type Author struct {
 	ID        string    `gorm:"primaryKey;type:uuid" json:"id" goninja:"list,retrieve"`
 	Name      string    `json:"name" goninja:"list,retrieve,create,update,filter" validate:"required,max=120"`
 	Bio       string    `json:"bio" goninja:"retrieve,create,update" validate:"max=2000"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at" goninja:"list,retrieve,filter"`
+	CreatedAt time.Time `gorm:"autoCreateTime;column:created_on" json:"created_at" goninja:"list,retrieve,filter"`
 	Books     []Book    `json:"books" goninja:"retrieve"`
 }

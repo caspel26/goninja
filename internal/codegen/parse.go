@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"reflect"
 	"strings"
+
+	"gorm.io/gorm/schema"
 )
 
 // ParseModels scans every .go file directly inside dir and extracts every
@@ -97,20 +99,15 @@ func parseStruct(name string, st *ast.StructType) (Model, bool, error) {
 		}
 		hasTaggedField = true
 
-		jsonName := tag.Get("json")
-		if jsonName == "" || jsonName == "-" {
-			jsonName = lower(f.Names[0].Name)
-		} else if idx := strings.Index(jsonName, ","); idx >= 0 {
-			jsonName = jsonName[:idx]
-		}
-
 		validateTag := tag.Get("validate")
+		gormTag := tag.Get("gorm")
 
 		for _, fname := range f.Names {
 			model.Fields = append(model.Fields, Field{
 				Name:        fname.Name,
 				GoType:      goType,
-				JSONName:    jsonName,
+				JSONName:    jsonNameFor(fname.Name, tag.Get("json")),
+				DBColumn:    dbColumnFor(fname.Name, gormTag),
 				Tags:        splitTag(goninjaTag),
 				ValidateTag: validateTag,
 			})
@@ -118,6 +115,23 @@ func parseStruct(name string, st *ast.StructType) (Model, bool, error) {
 	}
 
 	return model, hasTaggedField, nil
+}
+
+func jsonNameFor(fieldName, tagValue string) string {
+	if tagValue == "" || tagValue == "-" {
+		return lower(fieldName)
+	}
+	if idx := strings.Index(tagValue, ","); idx >= 0 {
+		return tagValue[:idx]
+	}
+	return tagValue
+}
+
+func dbColumnFor(fieldName, gormTag string) string {
+	if column := schema.ParseTagSetting(gormTag, ";")["COLUMN"]; column != "" {
+		return column
+	}
+	return defaultDBColumn(fieldName)
 }
 
 func splitTag(v string) []string {

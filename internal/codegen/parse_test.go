@@ -242,6 +242,45 @@ type Widget struct {
 	}
 }
 
+func TestParseModels_DerivesDBColumnsIndependentlyOfJSONNames(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+import "time"
+
+type Widget struct {
+	ID        string    ` + "`goninja:\"list,retrieve\"`" + `
+	CreatedAt time.Time ` + "`json:\"createdAt\" goninja:\"list,retrieve,filter\"`" + `
+	Label     string    ` + "`json:\"displayName\" gorm:\"column:display_name\" goninja:\"list,retrieve,filter\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "widget.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	fields := map[string]Field{}
+	for _, f := range models[0].Fields {
+		fields[f.Name] = f
+	}
+
+	for name, want := range map[string]string{
+		"ID":        "id",
+		"CreatedAt": "created_at",
+		"Label":     "display_name",
+	} {
+		if got := fields[name].DBColumn; got != want {
+			t.Errorf("%s DBColumn = %q, want %q", name, got, want)
+		}
+	}
+	if got := fields["CreatedAt"].JSONName; got != "createdAt" {
+		t.Errorf("CreatedAt JSONName = %q, want createdAt", got)
+	}
+}
+
 func TestParseModels_NonStructTypeDeclsAreSkipped(t *testing.T) {
 	dir := t.TempDir()
 	src := `package models

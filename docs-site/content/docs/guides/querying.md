@@ -121,6 +121,12 @@ Without this, `List` would `SELECT *` and read every column of every row — inc
 
 The optimization is skipped (falling back to `SELECT *`) only when a `list`-tagged field is itself a relation — a relation isn't a column, so it can't be named in a `SELECT`. `List` never preloads relations anyway (see [Relations](../relations)), so that field is already empty in a list response either way; the fallback just avoids emitting a broken query, it doesn't change what the response contains.
 
+The API field name and database column are deliberately separate. Query
+parameters and `order` use the JSON name (for example `created_at`), while
+generated SQL uses GORM's column name (`created_at` by default, or the value
+of `gorm:"column:..."`). This means a model can expose one public naming
+style without making its database schema follow it.
+
 ## Response envelope
 
 List responses are wrapped in `goninja.ListEnvelope[T]`:

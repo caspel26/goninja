@@ -3,7 +3,11 @@
 // source (handlers, GORM queries, validation, OpenAPI) from them.
 package codegen
 
-import "strings"
+import (
+	"strings"
+
+	"gorm.io/gorm/schema"
+)
 
 // goTypeTime is the Go type name for a timestamp field — special-cased
 // throughout this file (numeric-ness, OpenAPI type/format, import needs)
@@ -31,6 +35,11 @@ type Field struct {
 	// JSONName is the field's json tag name, defaulting to the lowercased
 	// field name when no `json` tag is present.
 	JSONName string
+	// DBColumn is the GORM database column for this field, from its
+	// gorm:"column:..." tag when present or GORM's default naming strategy
+	// otherwise. It is deliberately distinct from JSONName: an API is free
+	// to expose createdAt while GORM stores created_at.
+	DBColumn string
 	// Tags are the comma-separated values from the `goninja` struct tag,
 	// e.g. []string{"list", "retrieve"}.
 	Tags []string
@@ -45,6 +54,20 @@ type Field struct {
 	// falling back to "string" if the related model can't be found in the
 	// same generation run.
 	RelatedIDGoType string
+}
+
+// ColumnName returns f's database column. Parsed fields always carry
+// DBColumn, while the fallback keeps hand-built IR values in tests and
+// callers consistent with GORM's default convention.
+func (f Field) ColumnName() string {
+	if f.DBColumn != "" {
+		return f.DBColumn
+	}
+	return defaultDBColumn(f.Name)
+}
+
+func defaultDBColumn(fieldName string) string {
+	return schema.NamingStrategy{}.ColumnName("", fieldName)
 }
 
 // HasTag reports whether the field is annotated with the given goninja tag.
@@ -217,9 +240,8 @@ func (m Model) UpdateFields() []Field {
 }
 
 // ListSelectColumns returns the columns a List query needs to read: one
-// per `list` field, by JSON name — the same "JSON name is the column
-// name" assumption <model>OrderableColumns already makes. Without this a
-// List does SELECT *, reading every column of every row and then
+// per `list` field, by its GORM database column. Without this a List does
+// SELECT *, reading every column of every row and then
 // discarding whatever <Model>List doesn't carry, which on a model with a
 // large retrieve-only field (a bio, a body, a blob) is real per-request
 // I/O spent on data the response never contains.
@@ -236,7 +258,7 @@ func (m Model) ListSelectColumns() []string {
 		if f.IsRelation() {
 			return nil
 		}
-		cols = append(cols, f.JSONName)
+		cols = append(cols, f.ColumnName())
 	}
 	return cols
 }
