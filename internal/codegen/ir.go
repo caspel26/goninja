@@ -32,6 +32,16 @@ type Field struct {
 	Name string
 	// GoType is the field's type as written in source, e.g. "string", "int64".
 	GoType string
+	// UnderlyingGoType is the supported built-in type behind a named scalar
+	// declared in the models package (for example, string for Status). It is
+	// empty for built-ins and relations. GoType remains the source type so
+	// generated DTOs preserve aliases and enum types.
+	UnderlyingGoType string
+	// GeneratedGoType is the spelling to use in generated code. Named scalar
+	// types live in the models package, so Generate qualifies them there.
+	// Built-ins use GoType directly. It is an implementation detail of the
+	// generator and is populated immediately before rendering.
+	GeneratedGoType string
 	// JSONName is the field's json tag name, defaulting to the lowercased
 	// field name when no `json` tag is present.
 	JSONName string
@@ -85,10 +95,31 @@ func (f Field) HasTag(tag string) bool {
 // belongs-to/has-many association. Retrieve uses this to decide which
 // fields to Preload.
 func (f Field) IsRelation() bool {
+	if f.UnderlyingGoType != "" {
+		return false
+	}
 	t := strings.TrimPrefix(f.GoType, "*")
 	t = strings.TrimPrefix(t, "[]")
 	t = strings.TrimPrefix(t, "*")
 	return !scalarGoTypes[t]
+}
+
+// ScalarGoType returns a field's built-in type for classification and
+// OpenAPI purposes, resolving a supported named scalar when present.
+func (f Field) ScalarGoType() string {
+	if f.UnderlyingGoType != "" {
+		return f.UnderlyingGoType
+	}
+	return f.GoType
+}
+
+// RenderGoType returns the type spelling used in generated DTOs and filter
+// parsing. It falls back to GoType for hand-built IR values in unit tests.
+func (f Field) RenderGoType() string {
+	if f.GeneratedGoType != "" {
+		return f.GeneratedGoType
+	}
+	return f.GoType
 }
 
 // IsByID reports whether a relation field carries the "byid" modifier on
@@ -153,19 +184,22 @@ func (f Field) RelatedIDOpenAPIFormat() string {
 var floatGoTypes = map[string]bool{"float32": true, "float64": true}
 
 // IsBool reports whether the field's Go type is bool.
-func (f Field) IsBool() bool { return f.GoType == "bool" }
+func (f Field) IsBool() bool { return f.ScalarGoType() == "bool" }
 
 // IsString reports whether the field's Go type is string.
-func (f Field) IsString() bool { return f.GoType == "string" }
+func (f Field) IsString() bool { return f.ScalarGoType() == "string" }
 
 // IsFloat reports whether the field's Go type is float32/float64.
-func (f Field) IsFloat() bool { return floatGoTypes[f.GoType] }
+func (f Field) IsFloat() bool { return floatGoTypes[f.ScalarGoType()] }
+
+// IsTime reports whether f is time.Time or a supported named time type.
+func (f Field) IsTime() bool { return f.ScalarGoType() == goTypeTime }
 
 // IsNumeric reports whether the field's Go type is an int/uint/float
 // scalar (excluding bool and string) — used to decide whether a `filter`
 // field also gets Min/Max range filters, in addition to exact match.
 func (f Field) IsNumeric() bool {
-	return scalarGoTypes[f.GoType] && !f.IsBool() && !f.IsString() && f.GoType != goTypeTime
+	return scalarGoTypes[f.ScalarGoType()] && !f.IsBool() && !f.IsString() && !f.IsTime()
 }
 
 // OpenAPIType returns the JSON Schema "type" for the field's Go type, used
@@ -180,7 +214,7 @@ func (f Field) OpenAPIType() string {
 		return "string"
 	case f.IsFloat():
 		return "number"
-	case f.GoType == goTypeTime:
+	case f.IsTime():
 		return "string"
 	case f.IsNumeric():
 		return "integer"
@@ -193,11 +227,11 @@ func (f Field) OpenAPIType() string {
 // or "" when the type has none (e.g. plain string, boolean).
 func (f Field) OpenAPIFormat() string {
 	switch {
-	case f.GoType == goTypeTime:
+	case f.IsTime():
 		return "date-time"
 	case f.IsFloat():
 		return "double"
-	case strings.HasPrefix(f.GoType, "int") || strings.HasPrefix(f.GoType, "uint"):
+	case strings.HasPrefix(f.ScalarGoType(), "int") || strings.HasPrefix(f.ScalarGoType(), "uint"):
 		return "int64"
 	default:
 		return ""
@@ -301,7 +335,7 @@ func (m Model) IDGoType() string {
 // calls time.Parse (see model.go.tmpl).
 func (m Model) UsesTime() bool {
 	for _, f := range m.Fields {
-		if f.GoType != goTypeTime {
+		if !f.IsTime() {
 			continue
 		}
 		if f.HasTag("list") || f.HasTag("retrieve") || f.HasTag("create") || f.HasTag("update") || f.HasTag("filter") {
@@ -323,7 +357,7 @@ func (m Model) NeedsStrconv() bool {
 		return true
 	}
 	for _, f := range m.FilterFields() {
-		if !f.IsString() && f.GoType != goTypeTime {
+		if !f.IsString() && !f.IsTime() {
 			return true
 		}
 	}

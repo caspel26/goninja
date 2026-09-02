@@ -22,8 +22,33 @@ These five verbs and one modifier are the complete set. There are no others.
 
 Values are trimmed, so `goninja:"list, retrieve"` and `goninja:"list,retrieve"`
 are equivalent. Matching is exact string equality, which makes it
-case-sensitive: `List` is not recognized and is silently ignored, same as an
-unrecognized string.
+case-sensitive: `List` is rejected, as is every unrecognized or duplicate
+tag. `byid` additionally requires `retrieve` on a relation field.
+
+## Supported field types
+
+goninja supports the Go scalar types `string`, `bool`, signed and unsigned
+integers, floats, `byte`, `rune`, and `time.Time`. A relation must name
+another annotated goninja model from the same generation run.
+
+Defined scalar types in that same models package are supported and preserved
+in the generated DTOs and filters:
+
+```go
+type Status string
+type Cents int64
+
+type Book struct {
+	ID     string `goninja:"list,retrieve"`
+	Status Status `goninja:"list,retrieve,create,update,filter"`
+	Price  Cents  `goninja:"list,retrieve,create,update,filter"`
+}
+```
+
+Pointers and scalar slices, aliases of `time.Time`, and types from another
+package (for example `sql.NullString` or `uuid.UUID`) are rejected during
+generation for now. This is intentional: a clear generator error is safer
+than code that compiles but has ambiguous JSON, filter, or database behavior.
 
 ## Untagged fields and structs
 
@@ -104,6 +129,10 @@ goninja: codegen: models/book.go: Book: no goninja-tagged field named ID;
 Every problem across every model is reported in one run, and nothing is
 written when validation fails — so a rejected model never leaves a
 half-generated package behind.
+
+The generator also rejects collisions before rendering: duplicate JSON names
+within the same generated schema, duplicate filter query parameters (including
+numeric `_min`/`_max` helpers), and duplicate database columns.
 {{< /callout >}}
 
 ## Complete example

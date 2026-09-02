@@ -12,10 +12,10 @@ func TestValidate_AcceptsAWellFormedModel(t *testing.T) {
 			Name:       "Book",
 			SourceFile: "models/book.go",
 			Fields: []Field{
-				{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}},
-				{Name: "Title", GoType: "string", Tags: []string{"list", "create", "filter"}},
-				{Name: "Author", GoType: "Author", Tags: []string{"retrieve"}},
-				{Name: "Reviews", GoType: "[]Review", Tags: []string{"retrieve", "byid"}},
+				{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+				{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "create", "filter"}},
+				{Name: "Author", GoType: "Author", JSONName: "author", Tags: []string{"retrieve"}},
+				{Name: "Reviews", GoType: "[]Review", JSONName: "reviews", Tags: []string{"retrieve", "byid"}},
 			},
 		},
 		{Name: "Author", Fields: []Field{{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}}}},
@@ -89,6 +89,14 @@ func TestValidate_RejectsBadModels(t *testing.T) {
 			}},
 			want: "neither a supported scalar nor an annotated goninja model relation",
 		},
+		{
+			name: "nullable scalar type",
+			model: Model{Name: "Book", Fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Title", GoType: "*string", Tags: []string{"retrieve"}},
+			}},
+			want: "nullable and collection scalar types",
+		},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +130,85 @@ func TestValidate_RejectsRelationsOutsideTheGenerationSet(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "annotated goninja model relation") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_RejectsMalformedTags(t *testing.T) {
+	tests := []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{name: "unknown", tags: []string{"list", "export"}, want: `unknown goninja tag "export"`},
+		{name: "duplicate", tags: []string{"list", "list"}, want: `duplicate goninja tag "list"`},
+		{name: "byid without retrieve", tags: []string{"byid"}, want: `"byid" modifier requires the "retrieve" tag`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate([]Model{{Name: "Book", Fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Title", GoType: "string", Tags: tt.tags},
+			}}})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsGeneratedNameCollisions(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields []Field
+		want   string
+	}{
+		{
+			name: "list JSON names",
+			fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Title", GoType: "string", JSONName: "name", Tags: []string{"list"}},
+				{Name: "Name", GoType: "string", JSONName: "name", Tags: []string{"list"}},
+			},
+			want: "share JSON name \"name\" in the list schema",
+		},
+		{
+			name: "filter range query parameter",
+			fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Price", GoType: "int64", JSONName: "price", Tags: []string{"filter"}},
+				{Name: "PriceMin", GoType: "int64", JSONName: "price_min", Tags: []string{"filter"}},
+			},
+			want: "both use query parameter \"price_min\"",
+		},
+		{
+			name: "database columns",
+			fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Title", GoType: "string", DBColumn: "label", Tags: []string{"list"}},
+				{Name: "Name", GoType: "string", DBColumn: "label", Tags: []string{"retrieve"}},
+			},
+			want: "use the same database column \"label\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate([]Model{{Name: "Book", Fields: tt.fields}})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsModelOutputCollisions(t *testing.T) {
+	err := Validate([]Model{
+		{Name: "Book", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}},
+		{Name: "book", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "generate the same file and default route name") {
+		t.Fatalf("error = %v, want model output collision", err)
 	}
 }
 
