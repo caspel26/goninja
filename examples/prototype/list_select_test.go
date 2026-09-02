@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caspel26/goninja/examples/prototype/internal/api"
 	"github.com/caspel26/goninja/examples/prototype/models"
@@ -61,7 +62,53 @@ func TestListSelectsOnlyListColumns(t *testing.T) {
 	if strings.Contains(sel, "bio") || strings.Contains(sel, "`*`") || strings.Contains(sel, "SELECT * ") {
 		t.Errorf("list query still reads columns the list schema drops: %s", sel)
 	}
+	if !strings.Contains(sel, "created_on") {
+		t.Errorf("list query must use Author.CreatedAt's gorm column, got: %s", sel)
+	}
 	if !strings.Contains(cnt, "count(*)") {
 		t.Errorf("count query was corrupted by the Select: %s", cnt)
+	}
+}
+
+// TestAuthorListUsesGORMColumnForFilterAndOrder is the runtime counterpart
+// to the codegen tests: CreatedAt is publicly named created_at but stored as
+// created_on via its gorm:"column:..." tag. Both filtering and ordering must
+// use the latter, never the API name.
+func TestAuthorListUsesGORMColumnForFilterAndOrder(t *testing.T) {
+	db := goninjatest.NewDB(t, &models.Author{}, &models.Book{})
+	older := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, author := range []models.Author{
+		{ID: "a1", Name: "Older", CreatedAt: older},
+		{ID: "a2", Name: "Newer", CreatedAt: newer},
+	} {
+		if err := db.Create(&author).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sqlLog := &sqlCapture{}
+	db.Logger = logger.New(sqlLog, logger.Config{LogLevel: logger.Info})
+	r := api.NewAuthorResource(db)
+	out, total, err := r.List(t.Context(), api.AuthorFilters{
+		CreatedAt: &newer,
+		Limit:     10,
+		Order:     "-created_at",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(out) != 1 || out[0].Name != "Newer" {
+		t.Fatalf("list result = total %d, items %#v; want only Newer", total, out)
+	}
+
+	var selectSQL string
+	for _, stmt := range sqlLog.stmts {
+		if strings.HasPrefix(stmt, "SELECT") && !strings.HasPrefix(stmt, "SELECT count") {
+			selectSQL = stmt
+		}
+	}
+	if !strings.Contains(selectSQL, "created_on") || !strings.Contains(selectSQL, "ORDER BY created_on DESC") {
+		t.Errorf("filter/order must use gorm column created_on, got: %s", selectSQL)
 	}
 }

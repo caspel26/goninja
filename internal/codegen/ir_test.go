@@ -225,6 +225,24 @@ func TestModel_ListSelectColumns(t *testing.T) {
 	}
 }
 
+func TestModel_ListSelectColumns_UsesDBColumns(t *testing.T) {
+	m := Model{Fields: []Field{
+		{Name: "ID", GoType: "string", JSONName: "id", DBColumn: "id", Tags: []string{"list"}},
+		{Name: "CreatedAt", GoType: "time.Time", JSONName: "createdAt", DBColumn: "created_at", Tags: []string{"list"}},
+		{Name: "Label", GoType: "string", JSONName: "displayName", DBColumn: "display_name", Tags: []string{"list"}},
+	}}
+	got := m.ListSelectColumns()
+	want := []string{"id", "created_at", "display_name"}
+	if len(got) != len(want) {
+		t.Fatalf("ListSelectColumns() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ListSelectColumns()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestModel_ListSelectColumns_NilOnRelationField(t *testing.T) {
 	// A `list`-tagged relation field isn't a column — a Select naming it
 	// would be a SQL error, so ListSelectColumns must bail out to nil

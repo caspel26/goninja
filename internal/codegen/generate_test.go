@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"text/template"
@@ -51,6 +52,58 @@ func TestGenerate_TwoModels(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `validate:"required"`) {
 		t.Errorf("expected Task's validate tag to appear in generated schema, got:\n%s", b)
+	}
+}
+
+// TestGenerate_UsesDBColumnsForQueries keeps SQL identifiers independent
+// from their public JSON names. In particular, GORM's CreatedAt convention
+// is created_at even when the API exposes createdAt, and a gorm column
+// override must win for SELECT, filtering, and ordering.
+func TestGenerate_UsesDBColumnsForQueries(t *testing.T) {
+	models := []Model{{
+		Name: "Widget",
+		Fields: []Field{
+			{Name: "ID", GoType: "string", JSONName: "id", DBColumn: "id", Tags: []string{"list", "retrieve"}},
+			{Name: "CreatedAt", GoType: "time.Time", JSONName: "createdAt", DBColumn: "created_at", Tags: []string{"list", "retrieve", "filter"}},
+			{Name: "Label", GoType: "string", JSONName: "displayName", DBColumn: "display_name", Tags: []string{"list", "retrieve", "filter"}},
+		},
+	}}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(outDir, "widget_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+
+	for _, want := range []string{
+		`q = q.Where("created_at = ?", *f.CreatedAt)`,
+		`q = q.Where("display_name = ?", *f.Label)`,
+		`"created_at",`,
+		`"display_name",`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{
+		`"createdAt":\s+"created_at"`,
+		`"displayName":\s+"display_name"`,
+	} {
+		if !regexp.MustCompile(want).MatchString(got) {
+			t.Errorf("expected generated order map to match %q, got:\n%s", want, got)
+		}
+	}
+	for _, notWant := range []string{
+		`q = q.Where("createdAt = ?", *f.CreatedAt)`,
+		`q = q.Where("displayName = ?", *f.Label)`,
+	} {
+		if strings.Contains(got, notWant) {
+			t.Errorf("generated SQL must not use API name %q, got:\n%s", notWant, got)
+		}
 	}
 }
 

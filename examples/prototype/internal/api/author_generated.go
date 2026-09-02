@@ -73,23 +73,23 @@ type AuthorFilters struct {
 }
 
 // authorOrderableColumns whitelists which query values
-// "order" accepts — every list field, keyed and valued by its JSON name
-// (assumed to match the actual DB column, per this model's `json` tags).
-// Only ever indexed with a known key, never interpolated from user input
-// directly, so this doubles as the SQL-injection guard for ORDER BY.
+// "order" accepts — every list field, keyed by its JSON name and valued by
+// its GORM database column. Only ever indexed with a known key, never
+// interpolated from user input directly, so this doubles as the
+// SQL-injection guard for ORDER BY.
 // authorListColumns are the columns List reads — one per
 // `list` field. Without this the query would SELECT *, loading columns
 // AuthorList doesn't carry just to discard them after scanning.
 var authorListColumns = []string{
 	"id",
 	"name",
-	"created_at",
+	"created_on",
 }
 
 var authorOrderableColumns = map[string]string{
 	"id":         "id",
 	"name":       "name",
-	"created_at": "created_at",
+	"created_at": "created_on",
 }
 
 // authorInvalidIDMsg/authorIDQuery/
@@ -192,7 +192,7 @@ func (r *AuthorResource) List(ctx context.Context, f AuthorFilters) ([]AuthorLis
 		q = q.Where("name = ?", *f.Name)
 	}
 	if f.CreatedAt != nil {
-		q = q.Where("created_at = ?", *f.CreatedAt)
+		q = q.Where("created_on = ?", *f.CreatedAt)
 	}
 
 	var total int64
