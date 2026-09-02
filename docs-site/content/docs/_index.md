@@ -5,43 +5,54 @@ cascade:
   type: docs
 ---
 
-`goninja` turns an annotated Go struct into a complete REST resource: typed
-request and response schemas, `net/http` handlers, GORM-backed queries,
-validation, filtering, ordering, pagination and an OpenAPI fragment.
-
-It does this by writing Go source. `goninja generate` reads your models and
-emits one `<model>_generated.go` file per model — ordinary code you can read,
-diff, and step through in a debugger. Nothing is resolved by reflection at
-request time, so a mistake in a struct tag surfaces as a failed build rather
-than a surprise in production.
+Choose the path that matches what you are trying to do. If this is your first
+visit, start with the five-minute setup; if you already have a resource, jump
+straight to the guide or reference you need.
 
 {{< callout type="warning" >}}
 goninja is pre-alpha. The API described here is implemented and tested, but it
 may change without notice and there is no compatibility guarantee yet.
 {{< /callout >}}
 
-## Start here
+## New to goninja
 
 {{< cards >}}
-  {{< card link="getting-started" title="Getting Started" icon="play" subtitle="Install the CLI and go from an empty module to a running API." >}}
-  {{< card link="how-it-works" title="How It Works" icon="cog" subtitle="The pipeline from struct tag to generated handler, and what runs at request time." >}}
+  {{< card link="getting-started" title="Build your first API" icon="play" subtitle="Install the CLI and go from an empty Go module to a working resource." >}}
+  {{< card link="how-it-works" title="Understand the generator" icon="cog" subtitle="Follow a struct from parser to generated handler and see what runs per request." >}}
+  {{< card link="examples/bookstore" title="Explore a complete project" icon="collection" subtitle="Read a small bookstore API with relations, filters, validation, and docs." >}}
 {{< /cards >}}
 
-## Guides
+## Build an API
 
-Task-oriented walkthroughs for each part of the framework.
+Shape your resources, queries, relations, and routes.
 
 {{< cards >}}
   {{< card link="guides/querying" title="Filtering, Ordering & Pagination" icon="filter" >}}
-  {{< card link="guides/validation" title="Validation" icon="check-circle" >}}
   {{< card link="guides/relations" title="Relations" icon="link" >}}
+  {{< card link="guides/validation" title="Validation" icon="check-circle" >}}
+  {{< card link="guides/routing" title="Paths & Route Config" icon="map" >}}
+  {{< card link="guides/router-adapters" title="Router Adapters" icon="switch-horizontal" >}}
+  {{< card link="guides/openapi" title="OpenAPI & Docs UI" icon="book-open" >}}
+{{< /cards >}}
+
+## Secure and customize
+
+Control access, errors, lifecycle behavior, and non-CRUD endpoints.
+
+{{< cards >}}
+  {{< card link="guides/auth" title="Authentication" icon="lock-closed" >}}
   {{< card link="guides/errors" title="Errors & Responses" icon="exclamation-circle" >}}
+  {{< card link="guides/actions" title="Custom Actions" icon="lightning-bolt" >}}
   {{< card link="guides/transactions" title="Transactions" icon="database" >}}
   {{< card link="guides/hooks-and-overrides" title="Hooks & Overrides" icon="puzzle" >}}
-  {{< card link="guides/routing" title="Paths & Route Config" icon="map" >}}
-  {{< card link="guides/openapi" title="OpenAPI & Docs UI" icon="book-open" >}}
-  {{< card link="guides/actions" title="Custom Actions" icon="lightning-bolt" >}}
-  {{< card link="guides/auth" title="Authentication" icon="lock-closed" >}}
+  {{< card link="guides/best-practices" title="Best Practices" icon="sparkles" >}}
+{{< /cards >}}
+
+## Verify and operate
+
+Keep generated resources correct and performance changes measurable.
+
+{{< cards >}}
   {{< card link="guides/testing" title="Testing" icon="beaker" >}}
   {{< card link="guides/benchmarks" title="Performance & Benchmarks" icon="chart-bar" >}}
 {{< /cards >}}
@@ -55,9 +66,9 @@ Task-oriented walkthroughs for each part of the framework.
   {{< card link="reference/runtime" title="Runtime API" icon="cube" subtitle="The types and functions generated code depends on." >}}
 {{< /cards >}}
 
-## Also
+## Project
 
 {{< cards >}}
-  {{< card link="examples" title="Examples" icon="collection" subtitle="Complete, working projects." >}}
   {{< card link="comparison" title="Comparison" icon="scale" subtitle="How goninja differs from Huma, gocrud and gorest." >}}
+  {{< card link="changelog" title="Changelog" icon="tag" subtitle="Release notes, upgrades, and breaking changes." >}}
 {{< /cards >}}

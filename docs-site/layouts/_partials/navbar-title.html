@@ -12,24 +12,26 @@
 {{- $logoLink := .Site.Params.navbar.logo.link | default .Site.Home.RelPermalink -}}
 {{- $logoWidth := .Site.Params.navbar.logo.width | default "20" -}}
 {{- $logoHeight := .Site.Params.navbar.logo.height | default "20" -}}
-{{- $logoDarkPath := .Site.Params.navbar.logo.dark | default $logoPath -}}
 {{- $displayTitle := .Site.Params.navbar.displayTitle | default true -}}
 
 {{- $current := .Site.Params.versionLabel | default "dev" -}}
 {{- $versions := (index hugo.Data "versions") -}}
 
-<div class="hx:flex hx:items-center hx:gap-2 hx:ltr:mr-auto hx:rtl:ml-auto">
-  <a class="hx:flex hx:items-center hx:hover:opacity-75" href="{{ $logoLink }}">
+<div class="gn-navbar-brand hx:flex hx:items-center hx:gap-2 hx:ltr:mr-auto hx:rtl:ml-auto">
+  <a class="gn-brand" href="{{ $logoLink }}" aria-label="goninja documentation home">
     {{- if (.Site.Params.navbar.displayLogo | default true) }}
-      <img class="hx:mr-2 hx:block hx:dark:hidden" src="{{ $logoPath | relURL }}" alt="{{ cond $displayTitle `Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
-      <img class="hx:mr-2 hx:hidden hx:dark:block" src="{{ $logoDarkPath | relURL }}" alt="{{ cond $displayTitle `Dark Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+      <span class="gn-brand-mark">
+        <img src="{{ $logoPath | relURL }}" alt="" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+      </span>
     {{- end }}
     {{- if $displayTitle }}
-      <span class="hx:font-extrabold hx:inline hx:select-none">{{- .Site.Title -}}</span>
+      <span class="gn-wordmark hx:select-none">
+        <span class="gn-wordmark-name">{{- .Site.Title -}}</span>
+        <span class="gn-wordmark-separator" aria-hidden="true">/</span>
+        <span class="gn-wordmark-context">docs</span>
+      </span>
     {{- end }}
   </a>
-
-  {{- partial "gn-repo-stars.html" . -}}
 
   {{- with $versions }}
     <details class="gn-version">
@@ -49,4 +51,6 @@
       </div>
     </details>
   {{- end }}
+
+  {{- partial "gn-repo-stars.html" . -}}
 </div>
