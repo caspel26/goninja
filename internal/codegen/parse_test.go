@@ -290,6 +290,7 @@ type ID = string
 type Task struct {
 	ID string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
 }
+
 `
 	if err := os.WriteFile(filepath.Join(dir, "task.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -301,6 +302,43 @@ type Task struct {
 	}
 	if len(models) != 1 || models[0].Name != "Task" {
 		t.Errorf("expected only Task to be captured, got %+v", models)
+	}
+}
+
+func TestParseModels_ResolvesNamedScalars(t *testing.T) {
+	dir := t.TempDir()
+	src := `package models
+
+type Status string
+type Cents int64
+type Price Cents
+
+type Book struct {
+	ID     string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Status Status ` + "`json:\"status\" goninja:\"list,retrieve,create,update,filter\"`" + `
+	Price  Price  ` + "`json:\"price\" goninja:\"list,retrieve,create,update,filter\"`" + `
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "book.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := ParseModels(dir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+	fields := map[string]Field{}
+	for _, f := range models[0].Fields {
+		fields[f.Name] = f
+	}
+	if got := fields["Status"].UnderlyingGoType; got != "string" {
+		t.Errorf("Status UnderlyingGoType = %q, want string", got)
+	}
+	if got := fields["Price"].UnderlyingGoType; got != "int64" {
+		t.Errorf("Price UnderlyingGoType = %q, want int64", got)
+	}
+	if fields["Status"].IsRelation() || fields["Price"].IsRelation() {
+		t.Errorf("named scalars must not be relations: %+v", fields)
 	}
 }
 

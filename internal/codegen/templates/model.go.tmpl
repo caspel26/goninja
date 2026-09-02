@@ -51,7 +51,7 @@ place right after) on failure. */}}
 // one item per row of the "items" field of goninja.ListEnvelope.
 type {{.Model.Name}}List struct {
 {{- range .Model.ListFields}}
-	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"`
+	{{.Name}} {{.RenderGoType}} `json:"{{.JSONName}}"`
 {{- end}}
 }
 
@@ -64,7 +64,7 @@ type {{.Model.Name}}List struct {
 // as "<field>_id" — no nesting, no Preload.
 type {{.Model.Name}}Retrieve struct {
 {{- range .Model.RetrieveFields}}
-	{{.Name}}{{if and .IsRelation .IsByID}}ID{{end}} {{if .IsRelation}}{{if .IsByID}}{{if .IsSlice}}[]{{end}}{{.RelatedIDGoType}}{{else}}{{if .IsSlice}}[]{{end}}{{.RelatedGoType}}Retrieve{{end}}{{else}}{{.GoType}}{{end}} `json:"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}"`
+	{{.Name}}{{if and .IsRelation .IsByID}}ID{{end}} {{if .IsRelation}}{{if .IsByID}}{{if .IsSlice}}[]{{end}}{{.RelatedIDGoType}}{{else}}{{if .IsSlice}}[]{{end}}{{.RelatedGoType}}Retrieve{{end}}{{else}}{{.RenderGoType}}{{end}} `json:"{{.JSONName}}{{if and .IsRelation .IsByID}}_id{{end}}"`
 {{- end}}
 }
 
@@ -74,14 +74,14 @@ type {{.Model.Name}}Retrieve struct {
 // before Create runs.
 type {{.Model.Name}}Create struct {
 {{- range .Model.CreateFields}}
-	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
+	{{.Name}} {{.RenderGoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
 // {{.Model.Name}}Update is the shape accepted by PUT /{{.Model.NameLower}}s/{id}.
 type {{.Model.Name}}Update struct {
 {{- range .Model.UpdateFields}}
-	{{.Name}} {{.GoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
+	{{.Name}} {{.RenderGoType}} `json:"{{.JSONName}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}`
 {{- end}}
 }
 
@@ -93,10 +93,10 @@ type {{.Model.Name}}Update struct {
 // caller actually set.
 type {{.Model.Name}}Filters struct {
 {{- range .Model.FilterFields}}
-	{{.Name}} *{{.GoType}}
+	{{.Name}} *{{.RenderGoType}}
 {{- if .IsNumeric}}
-	{{.Name}}Min *{{.GoType}}
-	{{.Name}}Max *{{.GoType}}
+	{{.Name}}Min *{{.RenderGoType}}
+	{{.Name}}Max *{{.RenderGoType}}
 {{- end}}
 {{- end}}
 	Limit  int
@@ -371,22 +371,23 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 {{range .Model.FilterFields}}
 	if v := q.Get("{{.JSONName}}"); v != "" {
 {{- if .IsBool}}
-		parsed, err := strconv.ParseBool(v)
+		value, err := strconv.ParseBool(v)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
 		}
+		parsed := {{.RenderGoType}}(value)
 		f.{{.Name}} = &parsed
 {{- else if .IsString}}
-		parsed := v
+		parsed := {{.RenderGoType}}(v)
 		f.{{.Name}} = &parsed
 {{- else if .IsFloat}}
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}} = &parsed
-{{- else if eq .GoType "time.Time"}}
+{{- else if .IsTime}}
 		parsed, err := time.Parse(time.RFC3339, v)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
@@ -397,7 +398,7 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}} = &parsed
 {{- end}}
 	}
@@ -408,14 +409,14 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_min"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}}Min = &parsed
 {{- else}}
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_min"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}}Min = &parsed
 {{- end}}
 	}
@@ -425,14 +426,14 @@ func parse{{.Model.Name}}Filters(req *http.Request) ({{.Model.Name}}Filters, err
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_max"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}}Max = &parsed
 {{- else}}
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid {{.JSONName}}_max"}
 		}
-		parsed := {{.GoType}}(n)
+		parsed := {{.RenderGoType}}(n)
 		f.{{.Name}}Max = &parsed
 {{- end}}
 	}

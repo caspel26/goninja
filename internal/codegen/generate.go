@@ -33,6 +33,7 @@ func Generate(models []Model, outDir, packageName, modelsImportPath, modelsPkg s
 	if err := Validate(models); err != nil {
 		return fmt.Errorf("codegen: %w", err)
 	}
+	resolveGeneratedTypes(models, modelsPkg)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("codegen: creating %s: %w", outDir, err)
 	}
@@ -59,6 +60,21 @@ func Generate(models []Model, outDir, packageName, modelsImportPath, modelsPkg s
 	}
 
 	return nil
+}
+
+// resolveGeneratedTypes qualifies named scalar aliases from the models
+// package. Relations are handled separately by the template and built-ins
+// keep their source spelling.
+func resolveGeneratedTypes(models []Model, modelsPkg string) {
+	for i := range models {
+		for j := range models[i].Fields {
+			f := &models[i].Fields[j]
+			f.GeneratedGoType = f.GoType
+			if f.UnderlyingGoType != "" {
+				f.GeneratedGoType = modelsPkg + "." + f.GoType
+			}
+		}
+	}
 }
 
 // resolveByIDFields fills in RelatedIDGoType on every byid relation field

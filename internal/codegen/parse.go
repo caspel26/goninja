@@ -22,8 +22,9 @@ func ParseModels(dir string) ([]Model, error) {
 
 	var models []Model
 	for _, pkg := range pkgs {
+		namedScalars := collectNamedScalars(pkg.Files)
 		for path, file := range pkg.Files {
-			fileModels, err := parseFileModels(path, file)
+			fileModels, err := parseFileModelsWithScalars(path, file, namedScalars)
 			if err != nil {
 				return nil, err
 			}
@@ -37,13 +38,17 @@ func ParseModels(dir string) ([]Model, error) {
 // file (split out of ParseModels to keep each loop level's nesting, and
 // therefore cognitive complexity, in check).
 func parseFileModels(path string, file *ast.File) ([]Model, error) {
+	return parseFileModelsWithScalars(path, file, nil)
+}
+
+func parseFileModelsWithScalars(path string, file *ast.File, namedScalars map[string]string) ([]Model, error) {
 	var models []Model
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.TYPE {
 			continue
 		}
-		declModels, err := parseGenDeclModels(path, gen)
+		declModels, err := parseGenDeclModelsWithScalars(path, gen, namedScalars)
 		if err != nil {
 			return nil, err
 		}
@@ -55,6 +60,10 @@ func parseFileModels(path string, file *ast.File) ([]Model, error) {
 // parseGenDeclModels extracts every tagged struct type among gen's specs
 // (a `type (...)` block can declare more than one).
 func parseGenDeclModels(path string, gen *ast.GenDecl) ([]Model, error) {
+	return parseGenDeclModelsWithScalars(path, gen, nil)
+}
+
+func parseGenDeclModelsWithScalars(path string, gen *ast.GenDecl, namedScalars map[string]string) ([]Model, error) {
 	var models []Model
 	for _, spec := range gen.Specs {
 		ts, ok := spec.(*ast.TypeSpec)
@@ -65,7 +74,7 @@ func parseGenDeclModels(path string, gen *ast.GenDecl) ([]Model, error) {
 		if !ok {
 			continue
 		}
-		model, hasTaggedField, err := parseStruct(ts.Name.Name, st)
+		model, hasTaggedField, err := parseStructWithScalars(ts.Name.Name, st, namedScalars)
 		if err != nil {
 			return nil, fmt.Errorf("codegen: %s: %w", ts.Name.Name, err)
 		}
@@ -78,6 +87,10 @@ func parseGenDeclModels(path string, gen *ast.GenDecl) ([]Model, error) {
 }
 
 func parseStruct(name string, st *ast.StructType) (Model, bool, error) {
+	return parseStructWithScalars(name, st, nil)
+}
+
+func parseStructWithScalars(name string, st *ast.StructType, namedScalars map[string]string) (Model, bool, error) {
 	model := Model{Name: name}
 	hasTaggedField := false
 
@@ -103,18 +116,76 @@ func parseStruct(name string, st *ast.StructType) (Model, bool, error) {
 		gormTag := tag.Get("gorm")
 
 		for _, fname := range f.Names {
+			underlying := namedScalars[strings.TrimPrefix(strings.TrimPrefix(goType, "*"), "[]")]
 			model.Fields = append(model.Fields, Field{
-				Name:        fname.Name,
-				GoType:      goType,
-				JSONName:    jsonNameFor(fname.Name, tag.Get("json")),
-				DBColumn:    dbColumnFor(fname.Name, gormTag),
-				Tags:        splitTag(goninjaTag),
-				ValidateTag: validateTag,
+				Name:             fname.Name,
+				GoType:           goType,
+				UnderlyingGoType: underlying,
+				JSONName:         jsonNameFor(fname.Name, tag.Get("json")),
+				DBColumn:         dbColumnFor(fname.Name, gormTag),
+				Tags:             splitTag(goninjaTag),
+				ValidateTag:      validateTag,
 			})
 		}
 	}
 
 	return model, hasTaggedField, nil
+}
+
+// collectNamedScalars finds aliases and defined types whose underlying type
+// is one of goninja's supported scalar columns. The map is deliberately
+// package-local: a named type from another package has different import and
+// database semantics, so validation rejects it with an actionable error.
+func collectNamedScalars(files map[string]*ast.File) map[string]string {
+	definitions := make(map[string]string)
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				name, err := exprToString(ts.Type)
+				if err == nil {
+					definitions[ts.Name.Name] = name
+				}
+			}
+		}
+	}
+
+	resolved := make(map[string]string)
+	for name := range definitions {
+		if scalar := resolveNamedScalar(name, definitions); scalar != "" {
+			resolved[name] = scalar
+		}
+	}
+	return resolved
+}
+
+func resolveNamedScalar(name string, definitions map[string]string) string {
+	seen := make(map[string]bool)
+	for {
+		if seen[name] {
+			return ""
+		}
+		seen[name] = true
+		underlying, ok := definitions[name]
+		if !ok {
+			// time.Time needs special parsing and assignment code. Supporting a
+			// named wrapper correctly requires a separate contract, so keep it
+			// explicit rather than accepting a type the template cannot safely
+			// construct yet.
+			if name != goTypeTime && scalarGoTypes[name] {
+				return name
+			}
+			return ""
+		}
+		name = underlying
+	}
 }
 
 func jsonNameFor(fieldName, tagValue string) string {

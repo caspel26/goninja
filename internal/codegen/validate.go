@@ -13,6 +13,11 @@ import (
 // match a row.
 var idGoTypes = map[string]bool{"int64": true, "string": true}
 
+var knownGoninjaTags = map[string]bool{
+	"list": true, "retrieve": true, "create": true, "update": true,
+	"filter": true, "byid": true,
+}
+
 // Validate reports everything about models that the generator cannot turn
 // into working code.
 //
@@ -27,11 +32,27 @@ func Validate(models []Model) error {
 		modelNames[m.Name] = struct{}{}
 	}
 
-	var problems []error
+	problems := validateModelCollisions(models)
 	for _, m := range models {
 		problems = append(problems, m.validate(modelNames)...)
 	}
 	return errors.Join(problems...)
+}
+
+func validateModelCollisions(models []Model) []error {
+	var errs []error
+	generatedNames := make(map[string]Model, len(models))
+	for _, m := range models {
+		name := m.NameLower()
+		if previous, ok := generatedNames[name]; ok {
+			errs = append(errs, fmt.Errorf(
+				"models %s and %s generate the same file and default route name %q",
+				previous.Name, m.Name, name))
+			continue
+		}
+		generatedNames[name] = m
+	}
+	return errs
 }
 
 // validate returns every problem with a single model.
@@ -46,6 +67,7 @@ func (m Model) validate(modelNames map[string]struct{}) []error {
 	for _, f := range m.Fields {
 		errs = append(errs, f.validate(where, modelNames)...)
 	}
+	errs = append(errs, m.validateCollisions(where)...)
 	return errs
 }
 
@@ -76,6 +98,17 @@ func (m Model) validateID(where string) []error {
 func (f Field) validate(where string, modelNames map[string]struct{}) []error {
 	var errs []error
 	at := where + "." + f.Name
+	seenTags := make(map[string]bool, len(f.Tags))
+	for _, tag := range f.Tags {
+		if !knownGoninjaTags[tag] {
+			errs = append(errs, fmt.Errorf("%s: unknown goninja tag %q", at, tag))
+			continue
+		}
+		if seenTags[tag] {
+			errs = append(errs, fmt.Errorf("%s: duplicate goninja tag %q", at, tag))
+		}
+		seenTags[tag] = true
+	}
 	relation := f.IsRelation()
 	knownRelation := false
 	if relation {
@@ -91,6 +124,16 @@ func (f Field) validate(where string, modelNames map[string]struct{}) []error {
 	if f.IsByID() && !relation {
 		errs = append(errs, fmt.Errorf(
 			`%s: the "byid" modifier only applies to a relation field, and %s is not one`,
+			at, f.GoType))
+	}
+	if f.IsByID() && !f.HasTag("retrieve") {
+		errs = append(errs, fmt.Errorf(
+			`%s: the "byid" modifier requires the "retrieve" tag`, at))
+	}
+	if !relation && (strings.HasPrefix(f.GoType, "*") || strings.HasPrefix(f.GoType, "[]")) {
+		errs = append(errs, fmt.Errorf(
+			"%s: nullable and collection scalar types (%s) are not supported yet; "+
+				"use a non-pointer scalar field",
 			at, f.GoType))
 	}
 
@@ -110,5 +153,71 @@ func (f Field) validate(where string, modelNames map[string]struct{}) []error {
 			at))
 	}
 
+	return errs
+}
+
+// validateCollisions rejects names that would otherwise make a generated
+// schema ambiguous or emit a query against the wrong database column.
+func (m Model) validateCollisions(where string) []error {
+	var errs []error
+	errs = append(errs, validateJSONCollisions(where, "list", m.ListFields())...)
+	errs = append(errs, validateJSONCollisions(where, "retrieve", m.RetrieveFields())...)
+	errs = append(errs, validateJSONCollisions(where, "create", m.CreateFields())...)
+	errs = append(errs, validateJSONCollisions(where, "update", m.UpdateFields())...)
+	errs = append(errs, validateFilterCollisions(where, m.FilterFields())...)
+
+	columns := make(map[string]Field)
+	for _, f := range m.Fields {
+		if f.IsRelation() {
+			continue
+		}
+		if previous, ok := columns[f.ColumnName()]; ok {
+			errs = append(errs, fmt.Errorf(
+				"%s: fields %s and %s use the same database column %q",
+				where, previous.Name, f.Name, f.ColumnName()))
+			continue
+		}
+		columns[f.ColumnName()] = f
+	}
+	return errs
+}
+
+func validateJSONCollisions(where, schema string, fields []Field) []error {
+	seen := make(map[string]Field, len(fields))
+	var errs []error
+	for _, f := range fields {
+		name := f.JSONName
+		if schema == "retrieve" && f.IsRelation() && f.IsByID() {
+			name += "_id"
+		}
+		if previous, ok := seen[name]; ok {
+			errs = append(errs, fmt.Errorf(
+				"%s: fields %s and %s share JSON name %q in the %s schema",
+				where, previous.Name, f.Name, name, schema))
+			continue
+		}
+		seen[name] = f
+	}
+	return errs
+}
+
+func validateFilterCollisions(where string, fields []Field) []error {
+	seen := make(map[string]Field, len(fields)*3)
+	var errs []error
+	for _, f := range fields {
+		names := []string{f.JSONName}
+		if f.IsNumeric() {
+			names = append(names, f.JSONName+"_min", f.JSONName+"_max")
+		}
+		for _, name := range names {
+			if previous, ok := seen[name]; ok {
+				errs = append(errs, fmt.Errorf(
+					"%s: filter fields %s and %s both use query parameter %q",
+					where, previous.Name, f.Name, name))
+				continue
+			}
+			seen[name] = f
+		}
+	}
 	return errs
 }

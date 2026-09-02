@@ -565,6 +565,40 @@ func TestGenerate_EachScalarFilterTypeCompilesAlone(t *testing.T) {
 	}
 }
 
+func TestGenerate_NamedScalarTypesCompile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles a real temp module; skipped in -short")
+	}
+
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelsSrc := `package models
+
+type Status string
+type Cents int64
+type Active bool
+
+type Book struct {
+	ID     string ` + "`json:\"id\" goninja:\"list,retrieve\"`" + `
+	Status Status ` + "`json:\"status\" goninja:\"list,retrieve,create,update,filter\"`" + `
+	Price  Cents  ` + "`json:\"price\" goninja:\"list,retrieve,create,update,filter\"`" + `
+	Active Active ` + "`json:\"active\" goninja:\"list,retrieve,create,update,filter\"`" + `
+}
+`
+	modelsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(modelsDir, "book.go"), []byte(modelsSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	models, err := ParseModels(modelsDir)
+	if err != nil {
+		t.Fatalf("ParseModels: %v", err)
+	}
+
+	compileGenerated(t, repoRoot, models, "book.go", modelsSrc)
+}
+
 // compileGenerated generates models into a throwaway module (wired to this
 // repo by a local replace — testing the engine against itself, not
 // simulating an external consumer the way examples/prototype does) and
