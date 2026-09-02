@@ -131,6 +131,7 @@ Everything lives at **[goninja.dev](https://goninja.dev)**.
 | [Hooks & Overrides](https://goninja.dev/docs/guides/hooks-and-overrides/) · [Actions](https://goninja.dev/docs/guides/actions/) | Extending a resource |
 | [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
 | [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
+| [Performance & Benchmarks](https://goninja.dev/docs/guides/benchmarks/) | Reproducible request-path baselines and the CI regression gate |
 | [Router Adapters](https://goninja.dev/docs/guides/router-adapters/) | Mount on gin, echo, or chi instead of `net/http` |
 | [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
 | [pkg.go.dev](https://pkg.go.dev/github.com/caspel26/goninja) | Generated API reference for every package and symbol |

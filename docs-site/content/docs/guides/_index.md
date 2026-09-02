@@ -30,6 +30,7 @@ assumes you have already been through [Getting Started](../getting-started).
   {{< card link="hooks-and-overrides" title="Hooks & Overrides" icon="puzzle" subtitle="Run logic around an operation, or replace a generated method." >}}
   {{< card link="auth" title="Authentication" icon="lock-closed" subtitle="Authenticator objects, per-route policy and the built-in schemes." >}}
   {{< card link="testing" title="Testing" icon="beaker" subtitle="Drive a real resource over HTTP against in-memory SQLite." >}}
+  {{< card link="benchmarks" title="Performance & Benchmarks" icon="chart-bar" subtitle="Reproducible request-path baselines and the CI regression gate." >}}
   {{< card link="router-adapters" title="Router Adapters" icon="switch-horizontal" subtitle="Mount generated resources on gin, echo, or chi instead of net/http." >}}
   {{< card link="best-practices" title="Best Practices" icon="badge-check" subtitle="Project layout and judgment calls for a real app, not just a demo." >}}
 {{< /cards >}}

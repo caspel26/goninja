@@ -43,6 +43,7 @@ Task-oriented walkthroughs for each part of the framework.
   {{< card link="guides/actions" title="Custom Actions" icon="lightning-bolt" >}}
   {{< card link="guides/auth" title="Authentication" icon="lock-closed" >}}
   {{< card link="guides/testing" title="Testing" icon="beaker" >}}
+  {{< card link="guides/benchmarks" title="Performance & Benchmarks" icon="chart-bar" >}}
 {{< /cards >}}
 
 ## Reference
