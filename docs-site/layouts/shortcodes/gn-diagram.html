@@ -1,0 +1,79 @@
+{{- $name := .Get 0 -}}
+
+{{- if eq $name "pipeline" -}}
+<figure class="gn-diagram gn-diagram-pipeline" aria-label="goninja generation pipeline">
+  <figcaption>From model to request path</figcaption>
+  <div class="gn-diagram-flow">
+    <div class="gn-diagram-node">
+      <span class="gn-diagram-kicker">You write</span>
+      <strong>Go model</strong>
+      <code>goninja:"list,retrieve"</code>
+    </div>
+    <span class="gn-diagram-arrow" aria-hidden="true">→</span>
+    <div class="gn-diagram-node gn-diagram-node-accent">
+      <span class="gn-diagram-kicker">Generate time</span>
+      <strong>Shared IR</strong>
+      <code>fields · tags · relations</code>
+    </div>
+    <span class="gn-diagram-arrow" aria-hidden="true">→</span>
+    <div class="gn-diagram-node">
+      <span class="gn-diagram-kicker">Written to disk</span>
+      <strong>Generated Go</strong>
+      <code>handlers · queries · OpenAPI</code>
+    </div>
+    <span class="gn-diagram-arrow" aria-hidden="true">→</span>
+    <div class="gn-diagram-node gn-diagram-node-runtime">
+      <span class="gn-diagram-kicker">Request time</span>
+      <strong>Plain Go</strong>
+      <code>typed handler + GORM</code>
+    </div>
+  </div>
+  <p>Only the final step serves requests. Model inspection and code generation have already finished.</p>
+</figure>
+{{- else if eq $name "views" -}}
+<figure class="gn-diagram gn-diagram-views" aria-label="List and retrieve relation loading comparison">
+  <figcaption>Two views, deliberately different query shapes</figcaption>
+  <div class="gn-diagram-view-grid">
+    <section class="gn-diagram-view">
+      <header><span class="gn-diagram-method">GET</span><code>/books</code></header>
+      <strong>List view</strong>
+      <p>Returns <code>BookList</code> rows.</p>
+      <div class="gn-diagram-query"><span>SELECT</span> id, title, author_id<br><em>No relation preload</em></div>
+      <small>One lean collection query. No N+1 path exists.</small>
+    </section>
+    <section class="gn-diagram-view gn-diagram-view-detail">
+      <header><span class="gn-diagram-method">GET</span><code>/books/{id}</code></header>
+      <strong>Retrieve view</strong>
+      <p>Returns <code>BookRetrieve</code>.</p>
+      <div class="gn-diagram-query"><span>SELECT</span> book<br><span>PRELOAD</span> author</div>
+      <small>Loads the relation only when the detail response carries it.</small>
+    </section>
+  </div>
+</figure>
+{{- else if eq $name "policy" -}}
+<figure class="gn-diagram gn-diagram-policy" aria-label="Authentication and error mapper precedence">
+  <figcaption>Precedence is explicit at both boundaries</figcaption>
+  <div class="gn-diagram-policy-grid">
+    <section>
+      <h3>Route access</h3>
+      <ol>
+        <li><strong>Action.Auth</strong><span>for a custom action</span></li>
+        <li><strong>ResourceConfig.Auth</strong><span>per resource and route</span></li>
+        <li><strong>Config.DefaultAuth</strong><span>application default</span></li>
+        <li><strong>Public</strong><span>or a startup error with StrictAuth</span></li>
+      </ol>
+    </section>
+    <section>
+      <h3>Error response</h3>
+      <ol>
+        <li><strong>Resource mapper</strong><span>set directly on the resource</span></li>
+        <li><strong>Config default</strong><span>explicit mapper at mount time</span></li>
+        <li><strong>API mapper</strong><span>when Config leaves the mapper unset</span></li>
+        <li><strong>DefaultErrorMapper</strong><span>safe built-in HTTP response</span></li>
+      </ol>
+    </section>
+  </div>
+</figure>
+{{- else -}}
+  {{- errorf "gn-diagram: unknown diagram %q" $name -}}
+{{- end -}}

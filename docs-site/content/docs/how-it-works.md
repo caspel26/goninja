@@ -7,6 +7,8 @@ goninja has two halves that never run at the same time: a generator you invoke
 from the command line, and a small runtime package the generated code calls
 into. Understanding which half does what explains most of the design.
 
+{{< gn-diagram "pipeline" >}}
+
 ## The pipeline
 
 {{% steps %}}
