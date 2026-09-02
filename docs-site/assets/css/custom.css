@@ -161,9 +161,30 @@ article.content,
 }
 
 .hextra-code-block {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   box-shadow: var(--gn-shadow);
   border-radius: 0.625rem;
   margin-block: 1.25rem;
+}
+
+.hextra-code-block pre,
+.content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 42rem) {
+  .hextra-code-block pre,
+  .content pre {
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
 }
 
 /* Filename label. The theme positions and pads this; only restyle its
@@ -251,6 +272,75 @@ article.content,
   letter-spacing: -0.02em;
 }
 
+.gn-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.gn-brand-mark {
+  display: grid;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  transition: transform 0.15s ease;
+}
+
+.gn-brand:hover .gn-brand-mark {
+  transform: translateY(-1px);
+}
+
+.gn-brand-mark img {
+  display: block;
+  width: 2rem;
+  height: 2rem;
+}
+
+.gn-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.38rem;
+  line-height: 1;
+}
+
+.gn-wordmark-name {
+  color: transparent;
+  background: linear-gradient(95deg, hsl(194 65% 42%), hsl(274 62% 46%) 58%, hsl(276 66% 38%));
+  background-clip: text;
+  -webkit-background-clip: text;
+  font-size: 1.02rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.dark .gn-wordmark-name {
+  background-image: linear-gradient(95deg, hsl(194 76% 67%), hsl(276 78% 76%) 62%, hsl(276 72% 68%));
+}
+
+.gn-wordmark-separator {
+  color: var(--gn-border-strong);
+  font-weight: 400;
+}
+
+.gn-wordmark-context {
+  color: color-mix(in oklab, var(--gn-text) 58%, transparent);
+  font-size: 0.76rem;
+  font-weight: 590;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 42rem) {
+  .gn-wordmark-separator,
+  .gn-wordmark-context,
+  .gn-stars {
+    display: none;
+  }
+}
+
 /* --------------------------------------------------------------------------
    Tables — cleaner, denser
    -------------------------------------------------------------------------- */
@@ -279,6 +369,16 @@ article.content,
 
 .content table code {
   white-space: nowrap;
+}
+
+/* Tables need a scroll container on small screens. `display: table` cannot
+   contain its own overflow, so a wide column used to widen the whole page. */
+@media (max-width: 42rem) {
+  .content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -435,18 +535,180 @@ a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
   box-shadow: inset 0 0 0 1px var(--gn-border-strong) !important;
 }
 
-/* Hero demo animation. */
+/* Hero demo — useful immediately, with no animation or heavy media. */
 .gn-demo {
   margin: 0 0 4rem;
   max-width: 65rem;
 }
 
-.gn-demo img {
+.gn-demo-window {
+  overflow: hidden;
   width: 100%;
-  height: auto;
   border-radius: 0.75rem;
   border: 1px solid var(--gn-border);
+  background: hsl(274 24% 97.5%);
   box-shadow: var(--gn-shadow);
+}
+
+.dark .gn-demo-window {
+  background: #100e18;
+}
+
+.gn-demo-titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 2.5rem;
+  padding-inline: 0.9rem;
+  border-bottom: 1px solid var(--gn-border);
+  color: color-mix(in oklab, var(--gn-text) 55%, transparent);
+  font-family: var(--gn-font-mono);
+  font-size: 0.6875rem;
+}
+
+.gn-demo-dots {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.gn-demo-dots i {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: hsl(344 42% 63%);
+}
+
+.gn-demo-dots i:nth-child(2) {
+  background: hsl(38 48% 66%);
+}
+
+.gn-demo-dots i:nth-child(3) {
+  background: hsl(151 28% 57%);
+}
+
+.gn-demo-status {
+  justify-self: end;
+  color: var(--gn-accent);
+}
+
+.gn-demo-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  background:
+    radial-gradient(circle at 20% 0%, hsl(274 70% 55% / 0.09), transparent 34%),
+    radial-gradient(circle at 85% 100%, hsl(194 70% 50% / 0.08), transparent 32%);
+}
+
+.gn-demo-panel {
+  min-width: 0;
+}
+
+.gn-demo-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--gn-border);
+  color: color-mix(in oklab, var(--gn-text) 58%, transparent);
+  font-family: var(--gn-font-mono);
+  font-size: 0.6875rem;
+}
+
+.gn-demo-tab span {
+  color: var(--gn-purple);
+  font-family: var(--gn-font-sans);
+  font-size: 0.625rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.gn-demo-panel pre {
+  min-height: 12rem;
+  margin: 0;
+  padding: 1.35rem 1rem;
+  overflow-x: auto;
+  color: var(--gn-text);
+  background: transparent;
+  font-family: var(--gn-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.85;
+}
+
+.gn-code-keyword {
+  color: hsl(348 72% 58%);
+  font-weight: 650;
+}
+
+.dark .gn-code-keyword {
+  color: hsl(348 82% 68%);
+}
+
+.gn-code-type {
+  color: hsl(208 76% 48%);
+}
+
+.dark .gn-code-type {
+  color: hsl(208 88% 72%);
+}
+
+.gn-code-tag {
+  color: hsl(194 64% 38%);
+}
+
+.dark .gn-code-tag {
+  color: hsl(194 75% 67%);
+}
+
+.gn-demo-generate {
+  display: flex;
+  width: 8.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  border-inline: 1px solid var(--gn-border);
+  color: color-mix(in oklab, var(--gn-text) 55%, transparent);
+  font-family: var(--gn-font-mono);
+  font-size: 0.625rem;
+  text-align: center;
+}
+
+.gn-demo-generate b {
+  display: grid;
+  width: 2.2rem;
+  height: 2.2rem;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: linear-gradient(135deg, var(--gn-purple), var(--gn-accent));
+  font-family: var(--gn-font-sans);
+  font-size: 1.1rem;
+  box-shadow: 0 8px 18px -8px hsl(274 60% 35% / 0.7);
+}
+
+.gn-demo-output {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border-top: 1px solid var(--gn-border);
+}
+
+.gn-demo-output span {
+  padding: 0.22rem 0.5rem;
+  border: 1px solid var(--gn-border);
+  border-radius: 999px;
+  color: color-mix(in oklab, var(--gn-text) 68%, transparent);
+  background: var(--gn-surface);
+  font-size: 0.6875rem;
+  font-weight: 570;
+}
+
+.gn-demo-output b {
+  color: var(--gn-accent);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
 }
 
 .gn-demo figcaption {
@@ -458,6 +720,146 @@ a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
 .gn-demo figcaption code {
   font-family: var(--gn-font-mono);
   font-size: 0.8125rem;
+}
+
+/* The home layout is a flex column. Prevent intrinsic widths from demos or
+   long prose from making the page horizontally scroll on phones. */
+@media (max-width: 42rem) {
+  #content > div {
+    width: 100%;
+    min-width: 0;
+  }
+
+  h1.not-prose[class*="bg-clip-text"],
+  h2.not-prose[class*="bg-clip-text"],
+  p.not-prose[class*="text-xl"],
+  .gn-demo {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .gn-demo-titlebar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .gn-demo-status {
+    display: none;
+  }
+
+  .gn-demo-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gn-demo-generate {
+    width: 100%;
+    min-height: 4.25rem;
+    flex-direction: row;
+    border-block: 1px solid var(--gn-border);
+    border-inline: 0;
+  }
+
+  .gn-demo-generate b {
+    transform: rotate(90deg);
+  }
+
+  .gn-demo-panel pre {
+    min-height: 0;
+    font-size: 0.6875rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Changelog release list
+   -------------------------------------------------------------------------- */
+
+.gn-release-list {
+  overflow: hidden;
+  margin-block: 1.25rem 2rem;
+  border: 1px solid var(--gn-border);
+  border-radius: 0.75rem;
+  background: var(--gn-surface);
+  box-shadow: var(--gn-shadow);
+}
+
+.gn-release {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) 6.5rem auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  color: var(--gn-text) !important;
+  text-decoration: none !important;
+  transition: background-color 0.15s ease;
+}
+
+.gn-release + .gn-release {
+  border-top: 1px solid var(--gn-border);
+}
+
+.gn-release:hover {
+  background: var(--gn-surface-2);
+}
+
+.gn-release-version {
+  color: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness));
+  font-family: var(--gn-font-mono);
+  font-size: 0.8125rem;
+  font-weight: 680;
+}
+
+.gn-release-version em {
+  margin-inline-start: 0.25rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: 999px;
+  color: var(--gn-accent);
+  background: var(--gn-accent-soft);
+  font-family: var(--gn-font-sans);
+  font-size: 0.59375rem;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gn-release-summary {
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.gn-release time {
+  color: color-mix(in oklab, var(--gn-text) 56%, transparent);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.gn-release-arrow {
+  color: var(--gn-accent);
+  transition: transform 0.15s ease;
+}
+
+.gn-release:hover .gn-release-arrow {
+  transform: translateX(0.18rem);
+}
+
+@media (max-width: 42rem) {
+  .gn-release {
+    grid-template-columns: 1fr auto;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .gn-release-summary {
+    grid-column: 1 / -1;
+  }
+
+  .gn-release time {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .gn-release-arrow {
+    grid-column: 2;
+    grid-row: 1 / 4;
+  }
 }
 
 /* --------------------------------------------------------------------------

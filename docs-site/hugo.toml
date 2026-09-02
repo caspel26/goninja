@@ -88,20 +88,26 @@ enableGitInfo = true
   weight = 1
 
 [[menu.main]]
-  identifier = 'examples'
-  name = 'Examples'
-  pageRef = '/docs/examples'
-  weight = 2
+identifier = 'examples'
+name = 'Examples'
+pageRef = '/docs/examples'
+weight = 2
 
 [[menu.main]]
-  name = 'Search'
-  weight = 3
+identifier = 'changelog'
+name = 'Changelog'
+pageRef = '/docs/changelog'
+weight = 3
+
+[[menu.main]]
+name = 'Search'
+weight = 4
   [menu.main.params]
     type = 'search'
 
 [[menu.main]]
-  name = 'GitHub'
-  weight = 4
+name = 'GitHub'
+weight = 5
   url = 'https://github.com/caspel26/goninja'
   [menu.main.params]
     icon = 'github'

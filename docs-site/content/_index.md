@@ -30,7 +30,41 @@ description: Generate typed, validated REST APIs from annotated Go structs — n
 </div>
 
 <figure class="gn-demo">
-  <img src="/demo/vscode-demo.gif" width="1040" alt="Editor animation: a Book struct is annotated with goninja struct tags, goninja generate runs in the integrated terminal and reports the models it wrote, then a second tab appears containing the generated book_generated.go with its BookList output type." />
+  <div class="gn-demo-window" role="img" aria-label="A Book model with goninja tags becomes a generated BookList type after running goninja generate.">
+    <div class="gn-demo-titlebar">
+      <span class="gn-demo-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>bookstore</span>
+      <span class="gn-demo-status">generated code is yours</span>
+    </div>
+    <div class="gn-demo-panels">
+      <section class="gn-demo-panel">
+        <div class="gn-demo-tab"><span>MODEL</span> models/book.go</div>
+        <pre><code><span class="gn-code-keyword">type</span> Book <span class="gn-code-keyword">struct</span> {
+    ID    <span class="gn-code-type">string</span>  <span class="gn-code-tag">`goninja:"list,retrieve"`</span>
+    Title <span class="gn-code-type">string</span>  <span class="gn-code-tag">`goninja:"list,retrieve,create"`</span>
+    Price <span class="gn-code-type">float64</span> <span class="gn-code-tag">`goninja:"list,retrieve,filter"`</span>
+}</code></pre>
+      </section>
+      <div class="gn-demo-generate" aria-hidden="true">
+        <span>goninja generate</span>
+        <b>→</b>
+      </div>
+      <section class="gn-demo-panel">
+        <div class="gn-demo-tab"><span>GENERATED</span> api/book_generated.go</div>
+        <pre><code><span class="gn-code-keyword">type</span> BookList <span class="gn-code-keyword">struct</span> {
+    ID    <span class="gn-code-type">string</span>  <span class="gn-code-tag">`json:"id"`</span>
+    Title <span class="gn-code-type">string</span>  <span class="gn-code-tag">`json:"title"`</span>
+    Price <span class="gn-code-type">float64</span> <span class="gn-code-tag">`json:"price"`</span>
+}</code></pre>
+      </section>
+    </div>
+    <div class="gn-demo-output">
+      <span><b>GET</b> /books</span>
+      <span>typed handlers</span>
+      <span>GORM queries</span>
+      <span>OpenAPI</span>
+    </div>
+  </div>
   <figcaption>Tag the struct, run <code>goninja generate</code>, read the Go it wrote.</figcaption>
 </figure>
 
