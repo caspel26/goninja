@@ -15,6 +15,7 @@ these pages carry the context around it.
 
 | Version | Date | Notes |
 | --- | --- | --- |
+| [v0.6.1](v0.6.1/) | 2026-09-02 | GORM-aware generated SQL and published benchmark baselines |
 | [v0.2.0](v0.2.0/) | 2026-08-20 | Explicit errors, generator validation, versioned docs |
 | [v0.1.0](v0.1.0/) | 2026-08-20 | First pre-alpha release |
 
@@ -25,7 +26,7 @@ with the usual pre-1.0 caveat: **while the major version is 0, a minor bump
 may contain breaking changes.** Pin an exact version if that matters to you.
 
 ```shell
-go get github.com/caspel26/goninja@v0.2.0
+go get github.com/caspel26/goninja@v0.6.1
 ```
 
 These pages document goninja as it currently stands, which may include changes
@@ -34,6 +35,7 @@ frozen snapshot of its own documentation — use the version selector in the
 navbar to reach it.
 
 {{< cards >}}
+  {{< card link="v0.6.1" title="v0.6.1" icon="tag" subtitle="GORM-aware generated SQL and published benchmark baselines." >}}
   {{< card link="v0.2.0" title="v0.2.0" icon="tag" subtitle="Explicit errors, generator validation, versioned docs." >}}
   {{< card link="v0.1.0" title="v0.1.0" icon="tag" subtitle="First pre-alpha release — CRUD generation, filters, auth, OpenAPI." >}}
 {{< /cards >}}
