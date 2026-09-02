@@ -13,6 +13,32 @@ examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-02
+
+### Fixed
+
+- **Generated list queries now use GORM column names rather than public JSON
+  names** — `internal/codegen/ir.go`, `internal/codegen/parse.go`,
+  `internal/codegen/templates/model.go.tmpl`
+
+  A model can expose `created_at` while its GORM column is `created_on`, or
+  simply rely on GORM's normal `CreatedAt` → `created_at` convention.
+  Generated `SELECT`, filter `WHERE`, and `ORDER BY` clauses now derive their
+  identifiers from `gorm:"column:..."` when present and GORM's default naming
+  strategy otherwise; JSON names stay the public response, query-parameter,
+  and OpenAPI vocabulary. Generator and SQLite end-to-end tests cover the
+  distinction.
+
+### Added
+
+- **Performance & Benchmarks guide** — `docs-site/content/docs/guides/benchmarks.md`
+
+  The documentation now publishes the repository's three request-path
+  benchmark scenarios, representative tracked-baseline medians, exact run
+  commands, and the CI regression gate. It deliberately states the workload
+  boundaries rather than presenting local figures as cross-framework or
+  production-throughput claims.
+
 ## [0.6.0] - 2026-08-27
 
 ### Added
@@ -414,7 +440,8 @@ First pre-alpha release.
   [0.2.0]).
 - No OpenAPI example values are generated.
 
-[Unreleased]: https://github.com/caspel26/goninja/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/caspel26/goninja/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/caspel26/goninja/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/caspel26/goninja/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/caspel26/goninja/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/caspel26/goninja/compare/v0.3.1...v0.4.0
