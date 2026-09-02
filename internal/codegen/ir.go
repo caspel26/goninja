@@ -14,9 +14,9 @@ import (
 // since it's a scalar column but not a plain Go primitive.
 const goTypeTime = "time.Time"
 
-// scalarGoTypes are the field types treated as plain columns. Anything
-// else (a named struct type, or a slice of one) is treated as a relation
-// — see Field.IsRelation.
+// scalarGoTypes are the field types treated as plain columns. Validation
+// confirms that every other type is an annotated model relation before a
+// template can use it as one — see Field.IsRelation.
 var scalarGoTypes = map[string]bool{
 	"string": true, "bool": true,
 	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
@@ -117,6 +117,14 @@ func (f Field) IsSlice() bool {
 // "[]Review". Meaningless on a non-relation field.
 func (f Field) RelatedGoType() string {
 	return strings.TrimPrefix(f.GoType, "[]")
+}
+
+// RelatedModelName returns the declared model name behind a relation type.
+// It deliberately accepts pointer forms too so validation can report the
+// pointer-specific diagnostic alongside any other problem with the field.
+func (f Field) RelatedModelName() string {
+	t := strings.TrimPrefix(f.GoType, "[]")
+	return strings.TrimPrefix(t, "*")
 }
 
 // RelatedIDOpenAPIType/RelatedIDOpenAPIFormat mirror OpenAPIType/

@@ -22,15 +22,20 @@ var idGoTypes = map[string]bool{"int64": true, "string": true}
 // problem found is reported, not just the first, so one run tells the whole
 // story.
 func Validate(models []Model) error {
+	modelNames := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		modelNames[m.Name] = struct{}{}
+	}
+
 	var problems []error
 	for _, m := range models {
-		problems = append(problems, m.validate()...)
+		problems = append(problems, m.validate(modelNames)...)
 	}
 	return errors.Join(problems...)
 }
 
 // validate returns every problem with a single model.
-func (m Model) validate() []error {
+func (m Model) validate(modelNames map[string]struct{}) []error {
 	var errs []error
 	where := m.Name
 	if m.SourceFile != "" {
@@ -39,7 +44,7 @@ func (m Model) validate() []error {
 
 	errs = append(errs, m.validateID(where)...)
 	for _, f := range m.Fields {
-		errs = append(errs, f.validate(where)...)
+		errs = append(errs, f.validate(where, modelNames)...)
 	}
 	return errs
 }
@@ -68,10 +73,20 @@ func (m Model) validateID(where string) []error {
 }
 
 // validate returns every problem with a single field.
-func (f Field) validate(where string) []error {
+func (f Field) validate(where string, modelNames map[string]struct{}) []error {
 	var errs []error
 	at := where + "." + f.Name
 	relation := f.IsRelation()
+	knownRelation := false
+	if relation {
+		_, knownRelation = modelNames[f.RelatedModelName()]
+		if !knownRelation {
+			errs = append(errs, fmt.Errorf(
+				"%s: %s is neither a supported scalar nor an annotated goninja model relation; "+
+					"named scalar and external types are not supported yet",
+				at, f.GoType))
+		}
+	}
 
 	if f.IsByID() && !relation {
 		errs = append(errs, fmt.Errorf(
@@ -88,7 +103,7 @@ func (f Field) validate(where string) []error {
 			at, f.GoType))
 	}
 
-	if relation && f.HasTag("filter") {
+	if knownRelation && f.HasTag("filter") {
 		errs = append(errs, fmt.Errorf(
 			"%s: a relation field cannot be filtered, since it is not a column; "+
 				"tag its foreign key field instead",

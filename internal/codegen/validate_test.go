@@ -7,16 +7,20 @@ import (
 )
 
 func TestValidate_AcceptsAWellFormedModel(t *testing.T) {
-	models := []Model{{
-		Name:       "Book",
-		SourceFile: "models/book.go",
-		Fields: []Field{
-			{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}},
-			{Name: "Title", GoType: "string", Tags: []string{"list", "create", "filter"}},
-			{Name: "Author", GoType: "Author", Tags: []string{"retrieve"}},
-			{Name: "Reviews", GoType: "[]Review", Tags: []string{"retrieve", "byid"}},
+	models := []Model{
+		{
+			Name:       "Book",
+			SourceFile: "models/book.go",
+			Fields: []Field{
+				{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}},
+				{Name: "Title", GoType: "string", Tags: []string{"list", "create", "filter"}},
+				{Name: "Author", GoType: "Author", Tags: []string{"retrieve"}},
+				{Name: "Reviews", GoType: "[]Review", Tags: []string{"retrieve", "byid"}},
+			},
 		},
-	}}
+		{Name: "Author", Fields: []Field{{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}}}},
+		{Name: "Review", Fields: []Field{{Name: "ID", GoType: "string", Tags: []string{"list", "retrieve"}}}},
+	}
 
 	if err := Validate(models); err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -77,11 +81,19 @@ func TestValidate_RejectsBadModels(t *testing.T) {
 			}},
 			want: "cannot be filtered",
 		},
+		{
+			name: "named scalar type",
+			model: Model{Name: "Book", Fields: []Field{
+				{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+				{Name: "Status", GoType: "Status", Tags: []string{"list", "filter"}},
+			}},
+			want: "neither a supported scalar nor an annotated goninja model relation",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Validate([]Model{tt.model})
+			err := Validate(append([]Model{tt.model}, validRelationModels()...))
 			if err == nil {
 				t.Fatalf("expected an error mentioning %q, got none", tt.want)
 			}
@@ -92,12 +104,36 @@ func TestValidate_RejectsBadModels(t *testing.T) {
 	}
 }
 
+func validRelationModels() []Model {
+	return []Model{
+		{Name: "Author", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}},
+		{Name: "Book", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}},
+		{Name: "Review", Fields: []Field{{Name: "ID", GoType: "int64", Tags: []string{"list"}}}},
+	}
+}
+
+func TestValidate_RejectsRelationsOutsideTheGenerationSet(t *testing.T) {
+	err := Validate([]Model{{Name: "Book", Fields: []Field{
+		{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+		{Name: "Author", GoType: "Author", Tags: []string{"retrieve"}},
+	}}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "annotated goninja model relation") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidate_ReportsEveryProblemAtOnce(t *testing.T) {
 	// One run should tell the whole story rather than surfacing the next
 	// problem only after the previous one is fixed.
 	models := []Model{
 		{Name: "Book", SourceFile: "models/book.go", Fields: []Field{
 			{Name: "Author", GoType: "*Author", Tags: []string{"retrieve", "filter"}},
+		}},
+		{Name: "Author", SourceFile: "models/author.go", Fields: []Field{
+			{Name: "ID", GoType: "int64", Tags: []string{"list"}},
 		}},
 		{Name: "Tag", SourceFile: "models/tag.go", Fields: []Field{
 			{Name: "ID", GoType: "uint", Tags: []string{"list"}},
@@ -146,6 +182,30 @@ func TestGenerate_RejectsAnInvalidModelWithoutWritingFiles(t *testing.T) {
 		t.Fatal("expected Generate to reject the model")
 	}
 	if !strings.Contains(err.Error(), "no goninja-tagged field named ID") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries, readErr := os.ReadDir(out)
+	if readErr != nil {
+		t.Fatalf("reading %s: %v", out, readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no files written, got %d", len(entries))
+	}
+}
+
+func TestGenerate_RejectsNamedScalarsWithoutWritingFiles(t *testing.T) {
+	out := t.TempDir()
+	models := []Model{{Name: "Book", Fields: []Field{
+		{Name: "ID", GoType: "int64", Tags: []string{"list"}},
+		{Name: "Status", GoType: "Status", Tags: []string{"list", "filter"}},
+	}}}
+
+	err := Generate(models, out, "api", "example.com/m/models", "models")
+	if err == nil {
+		t.Fatal("expected Generate to reject a named scalar")
+	}
+	if !strings.Contains(err.Error(), "named scalar and external types are not supported yet") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

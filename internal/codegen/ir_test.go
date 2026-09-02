@@ -76,6 +76,24 @@ func TestField_RelatedGoType(t *testing.T) {
 	}
 }
 
+func TestField_RelatedModelName(t *testing.T) {
+	cases := []struct {
+		goType string
+		want   string
+	}{
+		{"Author", "Author"},
+		{"*Author", "Author"},
+		{"[]Author", "Author"},
+		{"[]*Author", "Author"},
+	}
+	for _, c := range cases {
+		f := Field{GoType: c.goType}
+		if got := f.RelatedModelName(); got != c.want {
+			t.Errorf("RelatedModelName(%q) = %q, want %q", c.goType, got, c.want)
+		}
+	}
+}
+
 func TestField_RelatedIDOpenAPITypeAndFormat(t *testing.T) {
 	f := Field{RelatedIDGoType: "int64"}
 	if got := f.RelatedIDOpenAPIType(); got != "integer" {
