@@ -1013,6 +1013,64 @@ a.not-prose[class*="bg-primary-600"][class*="rounded-full"]:hover {
 }
 
 /* --------------------------------------------------------------------------
+   Documentation utilities — keep the peripheral controls quiet
+   -------------------------------------------------------------------------- */
+
+/* Hextra uses a sticky, opaque surface behind the TOC's final utility block.
+   With a lone edit link that reads as an empty card, especially in dark mode.
+   Keep the link in the document flow as a compact, explicit control instead. */
+.hextra-toc .hextra-scrollbar > div:last-child {
+  position: static !important;
+  width: auto;
+  margin-top: 1.25rem !important;
+  padding-top: 0.75rem !important;
+  padding-bottom: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.hextra-toc .hextra-scrollbar > div:last-child > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding-inline: 0.6rem;
+  border: 1px solid var(--gn-border);
+  border-radius: 0.45rem;
+  color: color-mix(in oklab, var(--gn-text) 66%, transparent);
+  background: var(--gn-surface);
+  font-size: 0.6875rem;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.hextra-toc .hextra-scrollbar > div:last-child > a:hover {
+  border-color: hsl(var(--primary-hue) var(--primary-saturation) 60% / 0.6);
+  color: var(--gn-text);
+  background: var(--gn-surface-2);
+}
+
+/* The colour-mode picker is an application utility, not a sidebar card.
+   Remove the oversized sticky fade and give the button a compact boundary. */
+.hextra-sidebar-container > div[data-toggle-animation] {
+  margin: 0 1rem !important;
+  padding: 0.75rem 0 1rem !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.hextra-sidebar-container .hextra-theme-toggle {
+  min-height: 2rem;
+  border: 1px solid var(--gn-border);
+  border-radius: 0.45rem;
+  background: var(--gn-surface-2);
+}
+
+.hextra-sidebar-container .hextra-theme-toggle:hover {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface);
+}
+
+/* --------------------------------------------------------------------------
    Footer
    -------------------------------------------------------------------------- */
 
