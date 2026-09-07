@@ -79,7 +79,7 @@ app.MountDocs(mux, "/docs", docsui.SwaggerUI())
 http.ListenAndServe(":8080", mux)
 ```
 
-You now have `GET/POST /books`, `GET/PUT/DELETE /books/{id}`, the same for
+You now have `GET/POST /books`, `GET/PUT/PATCH/DELETE /books/{id}`, the same for
 `/authors`, and Swagger UI at `/docs` — with filtering, ordering, pagination
 and validation included:
 

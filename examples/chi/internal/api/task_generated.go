@@ -54,6 +54,14 @@ type TaskUpdate struct {
 	Done  bool   `json:"done"`
 }
 
+// TaskPatch is the shape accepted by PATCH /tasks/{id}.
+// Every field is a pointer: nil means the property was omitted, while a
+// non-nil pointer to false, 0, or "" explicitly writes that zero value.
+type TaskPatch struct {
+	Title *string `json:"title" validate:"omitempty,required,max=200"`
+	Done  *bool   `json:"done"`
+}
+
 // TaskFilters is the shape parsed from GET /tasks
 // query parameters: one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
@@ -70,10 +78,10 @@ type TaskFilters struct {
 }
 
 // taskOrderableColumns whitelists which query values
-// "order" accepts — every list field, keyed and valued by its JSON name
-// (assumed to match the actual DB column, per this model's `json` tags).
-// Only ever indexed with a known key, never interpolated from user input
-// directly, so this doubles as the SQL-injection guard for ORDER BY.
+// "order" accepts — every list field, keyed by its JSON name and valued by
+// its GORM database column. Only ever indexed with a known key, never
+// interpolated from user input directly, so this doubles as the
+// SQL-injection guard for ORDER BY.
 // taskListColumns are the columns List reads — one per
 // `list` field. Without this the query would SELECT *, loading columns
 // TaskList doesn't carry just to discard them after scanning.
@@ -159,6 +167,13 @@ type TaskOps interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// TaskPatchOps is deliberately separate from TaskOps:
+// adding PATCH must not make existing wrappers that override a CRUD method
+// silently stop dispatching through their established method set.
+type TaskPatchOps interface {
+	Patch(ctx context.Context, id string, in TaskPatch) (*TaskRetrieve, error)
+}
+
 // ops returns the TaskOps the generated handlers should call:
 // r.Self() if it satisfies the interface (a wrapper type overriding one or
 // more methods), otherwise r itself. r.Self() is r by default (set by
@@ -166,6 +181,13 @@ type TaskOps interface {
 // called again with a different value.
 func (r *TaskResource) ops() TaskOps {
 	if o, ok := r.Self().(TaskOps); ok {
+		return o
+	}
+	return r
+}
+
+func (r *TaskResource) patchOps() TaskPatchOps {
+	if o, ok := r.Self().(TaskPatchOps); ok {
 		return o
 	}
 	return r
@@ -262,6 +284,29 @@ func (r *TaskResource) Update(ctx context.Context, id string, in TaskUpdate) (*T
 	return r.Retrieve(ctx, id)
 }
 
+func (r *TaskResource) Patch(ctx context.Context, id string, in TaskPatch) (*TaskRetrieve, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
+	var m models.Task
+	if err := r.DB(ctx).First(&m, taskIDQuery, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "task", ID: id}
+		}
+		return nil, err
+	}
+	if in.Title != nil {
+		m.Title = *in.Title
+	}
+	if in.Done != nil {
+		m.Done = *in.Done
+	}
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
 func (r *TaskResource) Delete(ctx context.Context, id string) error {
 	res := r.DB(ctx).Where(taskIDQuery, id).Delete(&models.Task{})
 	if res.Error != nil {
@@ -281,10 +326,11 @@ func parseTaskFilters(req *http.Request) (TaskFilters, error) {
 	var f TaskFilters
 
 	if v := q.Get("done"); v != "" {
-		parsed, err := strconv.ParseBool(v)
+		value, err := strconv.ParseBool(v)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid done"}
 		}
+		parsed := bool(value)
 		f.Done = &parsed
 	}
 
@@ -411,6 +457,36 @@ func (r *TaskResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// patchHandler mirrors updateHandler but keeps absent JSON properties as nil
+// pointers in <Model>Patch, allowing Patch to update only supplied fields.
+func (r *TaskResource) patchHandler(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: taskInvalidIDMsg})
+		return
+	}
+
+	var in TaskPatch
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
+		return
+	}
+	self, ops := r.Self(), r.patchOps()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*TaskRetrieve, error) {
+		if h, ok := self.(goninja.BeforePatchHook[TaskPatch]); ok {
+			if err := h.BeforePatch(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Patch(ctx, id, in)
+	})
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, out)
+}
+
 // deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the delete itself.
 func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
@@ -441,7 +517,7 @@ func (r *TaskResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
 // schemes any protected path's Security refers to (resolved via
 // r.SecurityFor, the same logic Register's r.Protect calls enforce, so the
 // two can't drift apart) — built from the same IR as the rest of this
-// file, so they always match what List/Retrieve/Create/Update actually
+// file, so they always match what List/Retrieve/Create/Update/Patch actually
 // accept and return. Pass this resource to a goninja.API's Add method
 // (alongside its Register(mux) call) to merge it in, or just pass it to
 // API.Mount; see API.MountDocs.
@@ -479,6 +555,13 @@ func (r *TaskResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 			},
 			Required: []string{"title"},
 		},
+		"TaskPatch": {
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"title": {Type: "string"},
+				"done":  {Type: "boolean"},
+			},
+		},
 	}
 
 	listParams := []openapi.Parameter{
@@ -507,7 +590,7 @@ func (r *TaskResource) resourceConfig() goninja.ResourceConfig {
 	return goninja.ResourceConfig{}
 }
 
-// Register mounts list/retrieve/create/update/delete routes for
+// Register mounts list/retrieve/create/update/patch/delete routes for
 // Task under /tasks on mux (any goninja.Router —
 // *http.ServeMux, or an adapter for gin/echo/chi), or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
@@ -534,6 +617,7 @@ func (r *TaskResource) Register(mux goninja.Router) {
 		{goninja.RouteCreate, "POST", path, r.createHandler},
 		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
 		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
+		{goninja.RoutePatch, "PATCH", path + "/{id}", r.patchHandler},
 		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
 	}
 	var enabledRoutes []goninja.Route

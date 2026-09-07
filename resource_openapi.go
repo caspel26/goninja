@@ -29,7 +29,7 @@ type ResourceDoc struct {
 	// IDSchema describes the {id} path parameter: integer/int64 for an
 	// int64 ID, string otherwise.
 	IDSchema openapi.Schema
-	// Schemas holds this model's List/Retrieve/Create/Update schemas,
+	// Schemas holds this model's List/Retrieve/Create/Update/Patch schemas,
 	// keyed by component name. BuildResourceOpenAPI adds the
 	// "<Name>ListEnvelope" wrapper itself, since only the inner $ref
 	// varies.
@@ -132,8 +132,8 @@ func (d ResourceDoc) basePathItem(
 	return item
 }
 
-// itemPathItem builds the retrieve/update/delete PathItem for the "/{id}"
-// path, or nil when cfg enables none of the three.
+// itemPathItem builds the retrieve/update/patch/delete PathItem for the
+// "/{id}" path, or nil when cfg enables none of those routes.
 func (d ResourceDoc) itemPathItem(
 	r *BaseResource, cfg ResourceConfig, tags []string,
 	idParam openapi.Parameter, schemes map[string]openapi.SecurityScheme,
@@ -168,6 +168,20 @@ func (d ResourceDoc) itemPathItem(
 			},
 		}
 	}
+	if cfg.RouteEnabled(RoutePatch) {
+		item.Patch = &openapi.Operation{
+			Summary:     "Patch " + article(d.NameLower) + " " + d.NameLower,
+			Tags:        tags,
+			Parameters:  params,
+			Security:    security(r, RoutePatch, cfg, schemes),
+			RequestBody: jsonBody(schemaRef(d.Name + "Patch")),
+			Responses: map[string]openapi.Response{
+				"200": jsonResponse("OK", schemaRef(d.Name+"Retrieve")),
+				"404": notFound,
+				"422": {Description: "Validation error"},
+			},
+		}
+	}
 	if cfg.RouteEnabled(RouteDelete) {
 		item.Delete = &openapi.Operation{
 			Summary:    "Delete " + article(d.NameLower) + " " + d.NameLower,
@@ -180,7 +194,7 @@ func (d ResourceDoc) itemPathItem(
 			},
 		}
 	}
-	if item.Get == nil && item.Put == nil && item.Delete == nil {
+	if item.Get == nil && item.Put == nil && item.Patch == nil && item.Delete == nil {
 		return nil
 	}
 	return item

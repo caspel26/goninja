@@ -13,9 +13,9 @@ end to end.
 
 Once generated and running, the server serves:
 
-- `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`
-- `GET/POST /authors`, `GET/PUT/DELETE /authors/{id}`
-- `GET/POST /books`, `GET/PUT/DELETE /books/{id}`
+- `GET/POST /tasks`, `GET/PUT/PATCH/DELETE /tasks/{id}`
+- `GET/POST /authors`, `GET/PUT/PATCH/DELETE /authors/{id}`
+- `GET/POST /books`, `GET/PUT/PATCH/DELETE /books/{id}`
 - `POST /books/{id}/publish` — a custom action, not generated CRUD
 - `GET /docs` — a Swagger UI over the merged OpenAPI document
 

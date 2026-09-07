@@ -56,6 +56,14 @@ type AuthorUpdate struct {
 	Bio  string `json:"bio" validate:"max=2000"`
 }
 
+// AuthorPatch is the shape accepted by PATCH /authors/{id}.
+// Every field is a pointer: nil means the property was omitted, while a
+// non-nil pointer to false, 0, or "" explicitly writes that zero value.
+type AuthorPatch struct {
+	Name *string `json:"name" validate:"omitempty,required,max=120"`
+	Bio  *string `json:"bio" validate:"omitempty,max=2000"`
+}
+
 // AuthorFilters is the shape parsed from GET /authors
 // query parameters: one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
@@ -170,6 +178,13 @@ type AuthorOps interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// AuthorPatchOps is deliberately separate from AuthorOps:
+// adding PATCH must not make existing wrappers that override a CRUD method
+// silently stop dispatching through their established method set.
+type AuthorPatchOps interface {
+	Patch(ctx context.Context, id string, in AuthorPatch) (*AuthorRetrieve, error)
+}
+
 // ops returns the AuthorOps the generated handlers should call:
 // r.Self() if it satisfies the interface (a wrapper type overriding one or
 // more methods), otherwise r itself. r.Self() is r by default (set by
@@ -177,6 +192,13 @@ type AuthorOps interface {
 // called again with a different value.
 func (r *AuthorResource) ops() AuthorOps {
 	if o, ok := r.Self().(AuthorOps); ok {
+		return o
+	}
+	return r
+}
+
+func (r *AuthorResource) patchOps() AuthorPatchOps {
+	if o, ok := r.Self().(AuthorPatchOps); ok {
 		return o
 	}
 	return r
@@ -277,6 +299,29 @@ func (r *AuthorResource) Update(ctx context.Context, id string, in AuthorUpdate)
 	return r.Retrieve(ctx, id)
 }
 
+func (r *AuthorResource) Patch(ctx context.Context, id string, in AuthorPatch) (*AuthorRetrieve, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
+	var m models.Author
+	if err := r.DB(ctx).First(&m, authorIDQuery, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "author", ID: id}
+		}
+		return nil, err
+	}
+	if in.Name != nil {
+		m.Name = *in.Name
+	}
+	if in.Bio != nil {
+		m.Bio = *in.Bio
+	}
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
 func (r *AuthorResource) Delete(ctx context.Context, id string) error {
 	res := r.DB(ctx).Where(authorIDQuery, id).Delete(&models.Author{})
 	if res.Error != nil {
@@ -296,7 +341,7 @@ func parseAuthorFilters(req *http.Request) (AuthorFilters, error) {
 	var f AuthorFilters
 
 	if v := q.Get("name"); v != "" {
-		parsed := v
+		parsed := string(v)
 		f.Name = &parsed
 	}
 
@@ -431,6 +476,36 @@ func (r *AuthorResource) updateHandler(w http.ResponseWriter, req *http.Request)
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// patchHandler mirrors updateHandler but keeps absent JSON properties as nil
+// pointers in <Model>Patch, allowing Patch to update only supplied fields.
+func (r *AuthorResource) patchHandler(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: authorInvalidIDMsg})
+		return
+	}
+
+	var in AuthorPatch
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
+		return
+	}
+	self, ops := r.Self(), r.patchOps()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*AuthorRetrieve, error) {
+		if h, ok := self.(goninja.BeforePatchHook[AuthorPatch]); ok {
+			if err := h.BeforePatch(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Patch(ctx, id, in)
+	})
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, out)
+}
+
 // deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the delete itself.
 func (r *AuthorResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
@@ -501,6 +576,13 @@ func (r *AuthorResource) OpenAPI() (map[string]*openapi.PathItem, map[string]ope
 			},
 			Required: []string{"name"},
 		},
+		"AuthorPatch": {
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"name": {Type: "string"},
+				"bio":  {Type: "string"},
+			},
+		},
 	}
 
 	listParams := []openapi.Parameter{
@@ -557,6 +639,7 @@ func (r *AuthorResource) Register(mux goninja.Router) {
 		{goninja.RouteCreate, "POST", path, r.createHandler},
 		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
 		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
+		{goninja.RoutePatch, "PATCH", path + "/{id}", r.patchHandler},
 		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
 	}
 	var enabledRoutes []goninja.Route

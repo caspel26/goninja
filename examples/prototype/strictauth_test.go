@@ -38,7 +38,7 @@ func TestStrictAuth_PassesWhenEveryRouteIsClassified(t *testing.T) {
 		DefaultAuth: goninja.AuthPolicy{
 			Routes: []goninja.Route{
 				goninja.RouteList, goninja.RouteRetrieve,
-				goninja.RouteCreate, goninja.RouteUpdate, goninja.RouteDelete,
+				goninja.RouteCreate, goninja.RouteUpdate, goninja.RoutePatch, goninja.RouteDelete,
 			},
 		},
 	}

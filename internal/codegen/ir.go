@@ -249,6 +249,16 @@ func (f Field) IsRequired() bool {
 	return false
 }
 
+// PatchValidateTag keeps a model validation rule for a supplied PATCH field
+// while allowing the pointer field itself to be omitted. The generated Patch
+// DTO uses pointers specifically to preserve that absence information.
+func (f Field) PatchValidateTag() string {
+	if f.ValidateTag == "" {
+		return ""
+	}
+	return "omitempty," + f.ValidateTag
+}
+
 // Model is a struct type discovered in the models package.
 type Model struct {
 	// Name is the Go type name, e.g. "Task".

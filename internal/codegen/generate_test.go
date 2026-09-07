@@ -253,6 +253,47 @@ func TestGenerate_ActionsDispatch(t *testing.T) {
 	}
 }
 
+func TestGenerate_PatchUsesPointerInputAndDedicatedRoute(t *testing.T) {
+	models := []Model{{
+		Name: "Book",
+		Fields: []Field{
+			{Name: "ID", GoType: "string", JSONName: "id", Tags: []string{"list", "retrieve"}},
+			{Name: "Title", GoType: "string", JSONName: "title", Tags: []string{"list", "retrieve", "update"}, ValidateTag: "required,max=120"},
+			{Name: "Published", GoType: "bool", JSONName: "published", Tags: []string{"list", "retrieve", "update"}},
+		},
+	}}
+
+	outDir := t.TempDir()
+	if err := Generate(models, outDir, "api", "example.com/app/models", "models"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(outDir, "book_generated.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		"type BookPatch struct {",
+		"if in.Title != nil {",
+		"m.Title = *in.Title",
+		"BeforePatchHook[BookPatch]",
+		`{goninja.RoutePatch, "PATCH", path + "/{id}", r.patchHandler}`,
+		`"BookPatch": {`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected generated file to contain %q, got:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{
+		`Title\s+\*string\s+` + "`json:\"title\" validate:\"omitempty,required,max=120\"`",
+		`Published\s+\*bool\s+` + "`json:\"published\"`",
+	} {
+		if !regexp.MustCompile(want).MatchString(got) {
+			t.Errorf("expected generated file to match %q, got:\n%s", want, got)
+		}
+	}
+}
+
 // TestGenerate_RegisterCallsCheckStrictAuth asserts generated Register(mux)
 // calls r.CheckStrictAuth with every route it's about to mount, before
 // mounting any of them — the codegen half of Config.StrictAuth (the

@@ -19,6 +19,7 @@ func docFixture() ResourceDoc {
 			"AuthorRetrieve": {Type: "object"},
 			"AuthorCreate":   {Type: "object"},
 			"AuthorUpdate":   {Type: "object"},
+			"AuthorPatch":    {Type: "object"},
 		},
 		ListParams: []openapi.Parameter{
 			{Name: "name", In: "query", Schema: openapi.Schema{Type: "string"}},
@@ -49,6 +50,9 @@ func TestBuildResourceOpenAPI_PathsAndSchemas(t *testing.T) {
 	// doc's own schemas survive alongside it.
 	if _, ok := schemas["AuthorRetrieve"]; !ok {
 		t.Error("schemas dropped the doc's own AuthorRetrieve")
+	}
+	if patch := paths["/authors/{id}"].Patch; patch == nil || patch.RequestBody == nil || patch.RequestBody.Content["application/json"].Schema.Ref != "#/components/schemas/AuthorPatch" {
+		t.Errorf("PATCH operation = %+v, want an AuthorPatch request body", patch)
 	}
 	// Nothing is protected on a zero Config, so no schemes are collected.
 	if len(schemes) != 0 {
@@ -112,8 +116,19 @@ func TestBuildResourceOpenAPI_RestrictedRoutes(t *testing.T) {
 			t.Error("documented an /authors path with list and create both disabled")
 		}
 		item := paths["/authors/{id}"]
-		if item.Get == nil || item.Put != nil || item.Delete != nil {
+		if item.Get == nil || item.Put != nil || item.Patch != nil || item.Delete != nil {
 			t.Errorf("item path = %+v, want GET only", item)
+		}
+	})
+
+	t.Run("only patch documents PATCH with its dedicated input", func(t *testing.T) {
+		paths, _, _ := BuildResourceOpenAPI(&r, ResourceConfig{Routes: []Route{RoutePatch}}, docFixture())
+		if _, ok := paths["/authors"]; ok {
+			t.Error("documented a collection path with list and create disabled")
+		}
+		item := paths["/authors/{id}"]
+		if item.Patch == nil || item.Get != nil || item.Put != nil || item.Delete != nil {
+			t.Errorf("item path = %+v, want PATCH only", item)
 		}
 	})
 }

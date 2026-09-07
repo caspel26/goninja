@@ -206,12 +206,15 @@ type AfterCreateHook[TOut any] interface {
 type BeforeUpdateHook[TIn any] interface {
     BeforeUpdate(ctx context.Context, in *TIn) error
 }
+type BeforePatchHook[TIn any] interface {
+    BeforePatch(ctx context.Context, in *TIn) error
+}
 type BeforeDeleteHook[TID any] interface {
     BeforeDelete(ctx context.Context, id TID) error
 }
 ```
 
-These four are the complete set — there is no `AfterUpdateHook` or
+These five are the complete set — there is no `AfterUpdateHook` or
 `AfterDeleteHook`. All run inside the operation's transaction, so returning an
 error rolls the operation back. Hooks are found through `Self()`, so they only
 fire on a wrapper that called `SetSelf`.
@@ -226,6 +229,7 @@ const (
     RouteRetrieve Route = "retrieve"
     RouteCreate   Route = "create"
     RouteUpdate   Route = "update"
+    RoutePatch    Route = "patch"
     RouteDelete   Route = "delete"
 )
 

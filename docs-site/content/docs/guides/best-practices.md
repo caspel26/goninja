@@ -93,7 +93,7 @@ actions on the same resource need different auth.
 Default to `Action.Auth` for anything action-specific — it's declared
 where the action is, so there's nothing to keep in sync elsewhere. Reach
 for `Config.DefaultAuth.Routes`/`ResourceConfig.Auth` instead when a
-policy is genuinely shared across many routes (all five CRUD routes on
+policy is genuinely shared across many routes (all six CRUD routes on
 every resource, say) and repeating an `Auth` reference on each would just
 be noise. The two compose: `Action.Auth` always wins when set, so a
 resource-wide default plus a handful of exceptions via `Action.Auth` is a

@@ -34,6 +34,13 @@ type BeforeUpdateHook[TIn any] interface {
 	BeforeUpdate(ctx context.Context, in *TIn) error
 }
 
+// BeforePatchHook runs before Patch persists the provided fields. TIn is the
+// generated Patch schema (e.g. BookPatch), whose pointer fields distinguish
+// an omitted property from an explicitly supplied zero value.
+type BeforePatchHook[TIn any] interface {
+	BeforePatch(ctx context.Context, in *TIn) error
+}
+
 // BeforeDeleteHook runs before Delete removes the row. TID is the model's
 // ID type (int64 or string — see Model.IDGoType).
 type BeforeDeleteHook[TID any] interface {
