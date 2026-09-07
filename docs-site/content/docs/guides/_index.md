@@ -10,6 +10,7 @@ assumes you have already been through [Getting Started](../getting-started).
 
 {{< cards >}}
   {{< card link="querying" title="Filtering, Ordering & Pagination" icon="filter" subtitle="The filter tag, range filters, the order parameter and the list envelope." >}}
+  {{< card link="partial-updates" title="Partial Updates" icon="pencil" subtitle="Use PATCH without losing explicit zero values." >}}
   {{< card link="validation" title="Validation" icon="check-circle" subtitle="validate tags on input types, and registering your own." >}}
   {{< card link="relations" title="Relations" icon="link" subtitle="Belongs-to, has-many, and choosing between nesting and a bare ID." >}}
   {{< card link="transactions" title="Transactions" icon="database" subtitle="Which operations are transactional, and how to join one." >}}

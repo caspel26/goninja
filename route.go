@@ -12,6 +12,7 @@ const (
 	RouteRetrieve Route = "retrieve"
 	RouteCreate   Route = "create"
 	RouteUpdate   Route = "update"
+	RoutePatch    Route = "patch"
 	RouteDelete   Route = "delete"
 )
 

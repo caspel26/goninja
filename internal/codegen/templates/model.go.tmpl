@@ -85,6 +85,15 @@ type {{.Model.Name}}Update struct {
 {{- end}}
 }
 
+// {{.Model.Name}}Patch is the shape accepted by PATCH /{{.Model.NameLower}}s/{id}.
+// Every field is a pointer: nil means the property was omitted, while a
+// non-nil pointer to false, 0, or "" explicitly writes that zero value.
+type {{.Model.Name}}Patch struct {
+{{- range .Model.UpdateFields}}
+	{{.Name}} *{{.RenderGoType}} `json:"{{.JSONName}}"{{if .PatchValidateTag}} validate:"{{.PatchValidateTag}}"{{end}}`
+{{- end}}
+}
+
 // {{.Model.Name}}Filters is the shape parsed from GET /{{.Model.NameLower}}s
 // query parameters: one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
@@ -226,6 +235,13 @@ type {{.Model.Name}}Ops interface {
 	Delete(ctx context.Context, id {{$idType}}) error
 }
 
+// {{.Model.Name}}PatchOps is deliberately separate from {{.Model.Name}}Ops:
+// adding PATCH must not make existing wrappers that override a CRUD method
+// silently stop dispatching through their established method set.
+type {{.Model.Name}}PatchOps interface {
+	Patch(ctx context.Context, id {{$idType}}, in {{.Model.Name}}Patch) (*{{.Model.Name}}Retrieve, error)
+}
+
 // ops returns the {{.Model.Name}}Ops the generated handlers should call:
 // r.Self() if it satisfies the interface (a wrapper type overriding one or
 // more methods), otherwise r itself. r.Self() is r by default (set by
@@ -233,6 +249,13 @@ type {{.Model.Name}}Ops interface {
 // called again with a different value.
 func (r *{{.Model.Name}}Resource) ops() {{.Model.Name}}Ops {
 	if o, ok := r.Self().({{.Model.Name}}Ops); ok {
+		return o
+	}
+	return r
+}
+
+func (r *{{.Model.Name}}Resource) patchOps() {{.Model.Name}}PatchOps {
+	if o, ok := r.Self().({{.Model.Name}}PatchOps); ok {
 		return o
 	}
 	return r
@@ -343,6 +366,28 @@ func (r *{{.Model.Name}}Resource) Update(ctx context.Context, id {{$idType}}, in
 	}
 {{- range .Model.UpdateFields}}
 	m.{{.Name}} = in.{{.Name}}
+{{- end}}
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
+func (r *{{.Model.Name}}Resource) Patch(ctx context.Context, id {{$idType}}, in {{.Model.Name}}Patch) (*{{.Model.Name}}Retrieve, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
+	var m {{$mt}}
+	if err := r.DB(ctx).First(&m, {{.Model.NameLower}}IDQuery, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "{{.Model.NameLower}}", ID: id}
+		}
+		return nil, err
+	}
+{{- range .Model.UpdateFields}}
+	if in.{{.Name}} != nil {
+		m.{{.Name}} = *in.{{.Name}}
+	}
 {{- end}}
 	if err := r.DB(ctx).Save(&m).Error; err != nil {
 		return nil, err
@@ -552,6 +597,31 @@ func (r *{{.Model.Name}}Resource) updateHandler(w http.ResponseWriter, req *http
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// patchHandler mirrors updateHandler but keeps absent JSON properties as nil
+// pointers in <Model>Patch, allowing Patch to update only supplied fields.
+func (r *{{.Model.Name}}Resource) patchHandler(w http.ResponseWriter, req *http.Request) {
+	{{- template "parseID" .}}
+	var in {{.Model.Name}}Patch
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
+		return
+	}
+	self, ops := r.Self(), r.patchOps()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*{{.Model.Name}}Retrieve, error) {
+		if h, ok := self.(goninja.BeforePatchHook[{{.Model.Name}}Patch]); ok {
+			if err := h.BeforePatch(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Patch(ctx, id, in)
+	})
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, out)
+}
+
 // deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the delete itself.
 func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http.Request) {
@@ -577,7 +647,7 @@ func (r *{{.Model.Name}}Resource) deleteHandler(w http.ResponseWriter, req *http
 // schemes any protected path's Security refers to (resolved via
 // r.SecurityFor, the same logic Register's r.Protect calls enforce, so the
 // two can't drift apart) — built from the same IR as the rest of this
-// file, so they always match what List/Retrieve/Create/Update actually
+// file, so they always match what List/Retrieve/Create/Update/Patch actually
 // accept and return. Pass this resource to a goninja.API's Add method
 // (alongside its Register(mux) call) to merge it in, or just pass it to
 // API.Mount; see API.MountDocs.
@@ -621,6 +691,14 @@ func (r *{{.Model.Name}}Resource) OpenAPI() (map[string]*openapi.PathItem, map[s
 			{{- range .Model.UpdateFields}}{{if .IsRequired}} "{{.JSONName}}",{{end}}{{- end}}
 			},
 		},
+		"{{.Model.Name}}Patch": {
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+			{{- range .Model.UpdateFields}}
+				"{{.JSONName}}": {Type: "{{.OpenAPIType}}"{{if .OpenAPIFormat}}, Format: "{{.OpenAPIFormat}}"{{end}}},
+			{{- end}}
+			},
+		},
 	}
 
 	listParams := []openapi.Parameter{
@@ -655,7 +733,7 @@ func (r *{{.Model.Name}}Resource) resourceConfig() goninja.ResourceConfig {
 	return goninja.ResourceConfig{}
 }
 
-// Register mounts list/retrieve/create/update/delete routes for
+// Register mounts list/retrieve/create/update/patch/delete routes for
 // {{.Model.Name}} under /{{.Model.NameLower}}s on mux (any goninja.Router —
 // *http.ServeMux, or an adapter for gin/echo/chi), or under r's
 // ResourceConfig.Path/Routes override (see resourceConfig above) if one is
@@ -682,6 +760,7 @@ func (r *{{.Model.Name}}Resource) Register(mux goninja.Router) {
 		{goninja.RouteCreate, "POST", path, r.createHandler},
 		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
 		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
+		{goninja.RoutePatch, "PATCH", path + "/{id}", r.patchHandler},
 		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
 	}
 	var enabledRoutes []goninja.Route

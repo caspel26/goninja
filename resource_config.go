@@ -14,7 +14,7 @@ type ResourceConfig struct {
 	Path string
 
 	// Routes restricts which of RouteList/RouteRetrieve/RouteCreate/
-	// RouteUpdate/RouteDelete get mounted/documented. Empty means all of
+	// RouteUpdate/RoutePatch/RouteDelete get mounted/documented. Empty means all of
 	// them — Routes is an opt-in restriction, not an enable list you must
 	// spell out in full just to keep every route.
 	Routes []Route

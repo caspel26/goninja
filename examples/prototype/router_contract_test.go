@@ -35,6 +35,7 @@ func TestGeneratedRegister_EmitsStablePatterns(t *testing.T) {
 		"POST /books",
 		"GET /books/{id}",
 		"PUT /books/{id}",
+		"PATCH /books/{id}",
 		"DELETE /books/{id}",
 	}
 	sort.Strings(want)

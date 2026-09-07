@@ -66,6 +66,16 @@ type BookUpdate struct {
 	Published bool    `json:"published"`
 }
 
+// BookPatch is the shape accepted by PATCH /books/{id}.
+// Every field is a pointer: nil means the property was omitted, while a
+// non-nil pointer to false, 0, or "" explicitly writes that zero value.
+type BookPatch struct {
+	Title     *string  `json:"title" validate:"omitempty,required,max=200"`
+	AuthorID  *string  `json:"author_id" validate:"omitempty,required,uuid4"`
+	Price     *float64 `json:"price" validate:"omitempty,min=0"`
+	Published *bool    `json:"published"`
+}
+
 // BookFilters is the shape parsed from GET /books
 // query parameters: one exact-match pointer field
 // per `filter`-tagged model field, plus Min/Max range pointers for numeric
@@ -189,6 +199,13 @@ type BookOps interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// BookPatchOps is deliberately separate from BookOps:
+// adding PATCH must not make existing wrappers that override a CRUD method
+// silently stop dispatching through their established method set.
+type BookPatchOps interface {
+	Patch(ctx context.Context, id string, in BookPatch) (*BookRetrieve, error)
+}
+
 // ops returns the BookOps the generated handlers should call:
 // r.Self() if it satisfies the interface (a wrapper type overriding one or
 // more methods), otherwise r itself. r.Self() is r by default (set by
@@ -196,6 +213,13 @@ type BookOps interface {
 // called again with a different value.
 func (r *BookResource) ops() BookOps {
 	if o, ok := r.Self().(BookOps); ok {
+		return o
+	}
+	return r
+}
+
+func (r *BookResource) patchOps() BookPatchOps {
+	if o, ok := r.Self().(BookPatchOps); ok {
 		return o
 	}
 	return r
@@ -312,6 +336,35 @@ func (r *BookResource) Update(ctx context.Context, id string, in BookUpdate) (*B
 	return r.Retrieve(ctx, id)
 }
 
+func (r *BookResource) Patch(ctx context.Context, id string, in BookPatch) (*BookRetrieve, error) {
+	if err := goninja.Validate(in); err != nil {
+		return nil, err
+	}
+	var m models.Book
+	if err := r.DB(ctx).First(&m, bookIDQuery, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, goninja.NotFound{Resource: "book", ID: id}
+		}
+		return nil, err
+	}
+	if in.Title != nil {
+		m.Title = *in.Title
+	}
+	if in.AuthorID != nil {
+		m.AuthorID = *in.AuthorID
+	}
+	if in.Price != nil {
+		m.Price = *in.Price
+	}
+	if in.Published != nil {
+		m.Published = *in.Published
+	}
+	if err := r.DB(ctx).Save(&m).Error; err != nil {
+		return nil, err
+	}
+	return r.Retrieve(ctx, id)
+}
+
 func (r *BookResource) Delete(ctx context.Context, id string) error {
 	res := r.DB(ctx).Where(bookIDQuery, id).Delete(&models.Book{})
 	if res.Error != nil {
@@ -331,7 +384,7 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 	var f BookFilters
 
 	if v := q.Get("author_id"); v != "" {
-		parsed := v
+		parsed := string(v)
 		f.AuthorID = &parsed
 	}
 
@@ -361,10 +414,11 @@ func parseBookFilters(req *http.Request) (BookFilters, error) {
 	}
 
 	if v := q.Get("published"); v != "" {
-		parsed, err := strconv.ParseBool(v)
+		value, err := strconv.ParseBool(v)
 		if err != nil {
 			return f, goninja.BadRequest{Detail: "invalid published"}
 		}
+		parsed := bool(value)
 		f.Published = &parsed
 	}
 
@@ -499,6 +553,36 @@ func (r *BookResource) updateHandler(w http.ResponseWriter, req *http.Request) {
 	goninja.RespondJSON(w, http.StatusOK, out)
 }
 
+// patchHandler mirrors updateHandler but keeps absent JSON properties as nil
+// pointers in <Model>Patch, allowing Patch to update only supplied fields.
+func (r *BookResource) patchHandler(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: bookInvalidIDMsg})
+		return
+	}
+
+	var in BookPatch
+	if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+		goninja.Respond(w, r.ErrorMapper(), goninja.BadRequest{Detail: "invalid JSON"})
+		return
+	}
+	self, ops := r.Self(), r.patchOps()
+	out, err := goninja.InTransaction(req.Context(), r.DB(req.Context()), func(ctx context.Context) (*BookRetrieve, error) {
+		if h, ok := self.(goninja.BeforePatchHook[BookPatch]); ok {
+			if err := h.BeforePatch(ctx, &in); err != nil {
+				return nil, err
+			}
+		}
+		return ops.Patch(ctx, id, in)
+	})
+	if err != nil {
+		goninja.Respond(w, r.ErrorMapper(), err)
+		return
+	}
+	goninja.RespondJSON(w, http.StatusOK, out)
+}
+
 // deleteHandler runs BeforeDeleteHook (hooks.go), if r's Self() implements
 // it, in the same transaction as the delete itself.
 func (r *BookResource) deleteHandler(w http.ResponseWriter, req *http.Request) {
@@ -578,6 +662,15 @@ func (r *BookResource) OpenAPI() (map[string]*openapi.PathItem, map[string]opena
 			},
 			Required: []string{"title", "author_id"},
 		},
+		"BookPatch": {
+			Type: "object",
+			Properties: map[string]openapi.Schema{
+				"title":     {Type: "string"},
+				"author_id": {Type: "string"},
+				"price":     {Type: "number", Format: "double"},
+				"published": {Type: "boolean"},
+			},
+		},
 	}
 
 	listParams := []openapi.Parameter{
@@ -638,6 +731,7 @@ func (r *BookResource) Register(mux goninja.Router) {
 		{goninja.RouteCreate, "POST", path, r.createHandler},
 		{goninja.RouteRetrieve, "GET", path + "/{id}", r.retrieveHandler},
 		{goninja.RouteUpdate, "PUT", path + "/{id}", r.updateHandler},
+		{goninja.RoutePatch, "PATCH", path + "/{id}", r.patchHandler},
 		{goninja.RouteDelete, "DELETE", path + "/{id}", r.deleteHandler},
 	}
 	var enabledRoutes []goninja.Route

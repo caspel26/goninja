@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// fakeResource mounts the same five CRUD patterns plus one detail action a
+// fakeResource mounts the same six CRUD patterns plus one detail action a
 // real generated resource would, recording the id path param it saw.
 type fakeResource struct {
 	seenID string
@@ -32,6 +32,9 @@ func (f *fakeResource) Register(mux router.Router) {
 	})
 	mux.HandleFunc("PUT /books/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("update:" + r.PathValue("id")))
+	})
+	mux.HandleFunc("PATCH /books/{id}", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("patch:" + r.PathValue("id")))
 	})
 	mux.HandleFunc("DELETE /books/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -64,6 +67,7 @@ func TestAdapter_CRUDAndDetailAction(t *testing.T) {
 		{"create", http.MethodPost, "/books", http.StatusCreated, "created"},
 		{"retrieve", http.MethodGet, "/books/42", http.StatusOK, "retrieve:42"},
 		{"update", http.MethodPut, "/books/42", http.StatusOK, "update:42"},
+		{"patch", http.MethodPatch, "/books/42", http.StatusOK, "patch:42"},
 		{"delete", http.MethodDelete, "/books/42", http.StatusNoContent, ""},
 		{"detail action", http.MethodPost, "/books/42/publish", http.StatusOK, "publish:42"},
 	}

@@ -20,7 +20,7 @@ regenerate.
 
 For `book_generated.go`, the top-level declarations appear in this order:
 
-- Types: `BookList`, `BookRetrieve`, `BookCreate`, `BookUpdate`, `BookFilters`
+- Types: `BookList`, `BookRetrieve`, `BookCreate`, `BookUpdate`, `BookPatch`, `BookFilters`
 - Var: `bookOrderableColumns`
 - A const block
 - Functions: `toBookList`, `toBookRetrieve`
@@ -31,7 +31,7 @@ For `book_generated.go`, the top-level declarations appear in this order:
   *BookResource` — variadic, so `NewBookResource(db)` with no options
   still works unchanged)
 - Interface: `BookOps`
-- Methods: `ops`, `List`, `Retrieve`, `Create`, `Update`, `Delete`
+- Methods: `ops`, `patchOps`, `List`, `Retrieve`, `Create`, `Update`, `Patch`, `Delete`
 - Function: `parseBookFilters`
 - Methods: `listHandler`, `retrieveHandler`, `createHandler`, `updateHandler`,
   `deleteHandler`, `OpenAPI`, `Register`

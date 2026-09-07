@@ -8,7 +8,7 @@ package openapi
 
 // OpenAPI 3.0 types generated code builds fragments of. Deliberately a
 // small subset of the spec — just enough to describe what goninja actually
-// generates (object schemas, path items with get/post/put/delete,
+// generates (object schemas, path items with get/post/put/patch/delete,
 // query/path parameters, JSON request/response bodies) — not a
 // general-purpose OpenAPI library. Property/type shape mirrors the JSON
 // spec directly so Spec marshals to a valid document with no custom
@@ -78,6 +78,7 @@ type PathItem struct {
 	Get    *Operation `json:"get,omitempty"`
 	Post   *Operation `json:"post,omitempty"`
 	Put    *Operation `json:"put,omitempty"`
+	Patch  *Operation `json:"patch,omitempty"`
 	Delete *Operation `json:"delete,omitempty"`
 }
 

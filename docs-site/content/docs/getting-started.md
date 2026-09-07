@@ -147,6 +147,7 @@ UI.
 | `POST` | `/books` | create, validated against the `validate` tags |
 | `GET` | `/books/{id}` | retrieve, with relations preloaded |
 | `PUT` | `/books/{id}` | update |
+| `PATCH` | `/books/{id}` | partial update |
 | `DELETE` | `/books/{id}` | delete |
 | `GET` | `/docs/` | Swagger UI over the merged OpenAPI document |
 

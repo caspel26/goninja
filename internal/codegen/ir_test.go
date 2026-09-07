@@ -191,6 +191,15 @@ func TestField_IsRequired(t *testing.T) {
 	}
 }
 
+func TestField_PatchValidateTag(t *testing.T) {
+	if got := (Field{ValidateTag: "required,max=5"}).PatchValidateTag(); got != "omitempty,required,max=5" {
+		t.Errorf("PatchValidateTag() = %q", got)
+	}
+	if got := (Field{}).PatchValidateTag(); got != "" {
+		t.Errorf("PatchValidateTag() = %q, want empty", got)
+	}
+}
+
 func TestModel_FieldAccessors(t *testing.T) {
 	m := Model{
 		Name: "Task",
