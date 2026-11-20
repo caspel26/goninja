@@ -24,13 +24,13 @@
 #   scripts/build-docs.sh [output-dir]
 #
 # Environment:
-#   BASE_URL   site root without a trailing slash (default https://goninja.dev)
+#   BASE_URL   site root without a trailing slash (default https://goninja.caspel.dev)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SITE_DIR="docs-site"
-BASE_URL="${BASE_URL:-https://goninja.dev}"
+BASE_URL="${BASE_URL:-https://goninja.caspel.dev}"
 BASE_URL="${BASE_URL%/}"
 OUT="${1:-$REPO_ROOT/public}"
 

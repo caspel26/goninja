@@ -2,7 +2,7 @@ name: docs
 
 on:
   # Deploys only on a tagged release or by hand - not on every merge to main -
-  # so doc changes land on goninja.dev in step with a release, not the moment
+  # so doc changes land on goninja.caspel.dev in step with a release, not the moment
   # they're merged.
   release:
     types: [published]
@@ -43,7 +43,7 @@ jobs:
         # tag at /vX.Y/ — one tree, one artifact. baseURL comes from the custom
         # domain, not from the Pages-provided URL.
         env:
-          BASE_URL: https://goninja.dev
+          BASE_URL: https://goninja.caspel.dev
           # Authenticates the navbar star-count request; unauthenticated GitHub
           # API calls are rate-limited per IP and runners share addresses.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
