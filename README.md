@@ -18,12 +18,12 @@
 </p>
 
 <p align="center">
-  <a href="https://goninja.dev"><b>goninja.dev</b></a> ·
-  <a href="https://goninja.dev/docs/getting-started/">Getting Started</a> ·
-  <a href="https://goninja.dev/docs/guides/">Guides</a> ·
-  <a href="https://goninja.dev/docs/reference/tags/">Reference</a> ·
-  <a href="https://goninja.dev/docs/examples/">Examples</a> ·
-  <a href="https://goninja.dev/docs/changelog/">Changelog</a>
+  <a href="https://goninja.caspel.dev"><b>goninja.caspel.dev</b></a> ·
+  <a href="https://goninja.caspel.dev/docs/getting-started/">Getting Started</a> ·
+  <a href="https://goninja.caspel.dev/docs/guides/">Guides</a> ·
+  <a href="https://goninja.caspel.dev/docs/reference/tags/">Reference</a> ·
+  <a href="https://goninja.caspel.dev/docs/examples/">Examples</a> ·
+  <a href="https://goninja.caspel.dev/docs/changelog/">Changelog</a>
 </p>
 
 ---
@@ -112,30 +112,30 @@ How does this compare to [Huma](https://github.com/danielgtaylor/huma),
 request time through generics and reflection, or leave the handlers to you.
 goninja trades that runtime flexibility for handlers, queries and OpenAPI
 fragments that exist as ordinary Go source before the binary is built —
-[full comparison](https://goninja.dev/docs/comparison/).
+[full comparison](https://goninja.caspel.dev/docs/comparison/).
 
 ---
 
 ## Documentation
 
-Everything lives at **[goninja.dev](https://goninja.dev)**.
+Everything lives at **[goninja.caspel.dev](https://goninja.caspel.dev)**.
 
 | | |
 |---|---|
-| [Getting Started](https://goninja.dev/docs/getting-started/) | From an empty module to a running API |
-| [How It Works](https://goninja.dev/docs/how-it-works/) | The generator pipeline, and what runs per request |
-| [Struct Tags](https://goninja.dev/docs/reference/tags/) | Every verb and modifier the `goninja` tag accepts |
-| [Filtering & Pagination](https://goninja.dev/docs/guides/querying/) | Filters, ranges, ordering, the list envelope |
-| [Validation](https://goninja.dev/docs/guides/validation/) · [Errors](https://goninja.dev/docs/guides/errors/) | Input rules, status codes, custom mapping |
-| [Relations](https://goninja.dev/docs/guides/relations/) · [Transactions](https://goninja.dev/docs/guides/transactions/) | Nesting vs. IDs, and the write path |
-| [Hooks & Overrides](https://goninja.dev/docs/guides/hooks-and-overrides/) · [Actions](https://goninja.dev/docs/guides/actions/) | Extending a resource |
-| [Authentication](https://goninja.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
-| [Testing](https://goninja.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
-| [Performance & Benchmarks](https://goninja.dev/docs/guides/benchmarks/) | Reproducible request-path baselines and the CI regression gate |
-| [Router Adapters](https://goninja.dev/docs/guides/router-adapters/) | Mount on gin, echo, or chi instead of `net/http` |
-| [CLI](https://goninja.dev/docs/reference/cli/) · [Runtime API](https://goninja.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
+| [Getting Started](https://goninja.caspel.dev/docs/getting-started/) | From an empty module to a running API |
+| [How It Works](https://goninja.caspel.dev/docs/how-it-works/) | The generator pipeline, and what runs per request |
+| [Struct Tags](https://goninja.caspel.dev/docs/reference/tags/) | Every verb and modifier the `goninja` tag accepts |
+| [Filtering & Pagination](https://goninja.caspel.dev/docs/guides/querying/) | Filters, ranges, ordering, the list envelope |
+| [Validation](https://goninja.caspel.dev/docs/guides/validation/) · [Errors](https://goninja.caspel.dev/docs/guides/errors/) | Input rules, status codes, custom mapping |
+| [Relations](https://goninja.caspel.dev/docs/guides/relations/) · [Transactions](https://goninja.caspel.dev/docs/guides/transactions/) | Nesting vs. IDs, and the write path |
+| [Hooks & Overrides](https://goninja.caspel.dev/docs/guides/hooks-and-overrides/) · [Actions](https://goninja.caspel.dev/docs/guides/actions/) | Extending a resource |
+| [Authentication](https://goninja.caspel.dev/docs/guides/auth/) | `Authenticator` objects and per-route policy |
+| [Testing](https://goninja.caspel.dev/docs/guides/testing/) | Drive a real resource over HTTP, no Postgres needed |
+| [Performance & Benchmarks](https://goninja.caspel.dev/docs/guides/benchmarks/) | Reproducible request-path baselines and the CI regression gate |
+| [Router Adapters](https://goninja.caspel.dev/docs/guides/router-adapters/) | Mount on gin, echo, or chi instead of `net/http` |
+| [CLI](https://goninja.caspel.dev/docs/reference/cli/) · [Runtime API](https://goninja.caspel.dev/docs/reference/runtime/) | Flags, watch mode, and every exported symbol |
 | [pkg.go.dev](https://pkg.go.dev/github.com/caspel26/goninja) | Generated API reference for every package and symbol |
-| [Changelog](https://goninja.dev/docs/changelog/) | What each release added, and what it broke |
+| [Changelog](https://goninja.caspel.dev/docs/changelog/) | What each release added, and what it broke |
 
 ---
 
@@ -167,7 +167,7 @@ document as JSON plus a rendered UI, both fully embedded (no external CDN).
 Every operation expands into its full request/response schema, built from the
 same IR as the handlers — so the document can't drift from what the code
 actually does. Custom
-[actions](https://goninja.dev/docs/guides/actions/) are documented too:
+[actions](https://goninja.caspel.dev/docs/guides/actions/) are documented too:
 
 <p align="center">
 <img src="docs/screenshots/swagger-ui-operation.png" alt="Swagger UI showing an expanded POST /books/{id}/publish operation, its id path parameter, and 200/404 responses" width="720">

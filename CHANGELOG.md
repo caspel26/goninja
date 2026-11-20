@@ -9,7 +9,7 @@ While goninja is pre-1.0, a minor version bump may include breaking changes.
 
 Each entry names the package or file it touches and explains why the change
 was made, not just what changed. Release notes with more context and worked
-examples live at [goninja.dev/docs/changelog](https://goninja.dev/docs/changelog/).
+examples live at [goninja.caspel.dev/docs/changelog](https://goninja.caspel.dev/docs/changelog/).
 
 ## [Unreleased]
 
