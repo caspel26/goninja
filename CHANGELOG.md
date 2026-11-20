@@ -13,6 +13,16 @@ examples live at [goninja.caspel.dev/docs/changelog](https://goninja.caspel.dev/
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-20
+
+### Changed
+
+- **Documentation moved to `goninja.caspel.dev`** — `docs-site/hugo.toml`, `docs-site/static/CNAME`, `.github/workflows/docs.yml`, `scripts/build-docs.sh`, `README.md`
+
+  The Hugo `baseURL`, the GitHub Pages `CNAME`, the docs workflow, the build
+  script default and every README link now point at the new domain, so the
+  module page on pkg.go.dev links to the right place. No Go code changed.
+
 ## [0.6.1] - 2026-09-02
 
 ### Fixed
@@ -440,7 +450,8 @@ First pre-alpha release.
   [0.2.0]).
 - No OpenAPI example values are generated.
 
-[Unreleased]: https://github.com/caspel26/goninja/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/caspel26/goninja/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/caspel26/goninja/compare/v0.7.0...v0.7.1
 [0.6.1]: https://github.com/caspel26/goninja/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/caspel26/goninja/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/caspel26/goninja/compare/v0.4.0...v0.5.0
